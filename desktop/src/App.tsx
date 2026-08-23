@@ -1,6 +1,12 @@
 import { useMemo, useState } from 'react';
-import { loadEntity, loadManuscript, loadWorkspace } from './storyos';
-import type { EntitySummary, EntityView, ManuscriptSummary, ManuscriptView, WorkspaceSnapshot } from './types';
+import { loadEntity, loadManuscript, loadWorkspace, saveManuscript } from './storyos';
+import type {
+  EntitySummary,
+  EntityView,
+  ManuscriptSummary,
+  ManuscriptView,
+  WorkspaceSnapshot,
+} from './types';
 
 type Selection =
   | { kind: 'manuscript'; value: ManuscriptSummary }
@@ -32,7 +38,11 @@ export default function App() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [entityView, setEntityView] = useState<EntityView | null>(null);
   const [manuscriptView, setManuscriptView] = useState<ManuscriptView | null>(null);
+  const [draftContent, setDraftContent] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [navMode, setNavMode] = useState<'manuscripts' | 'entities'>('manuscripts');
 
@@ -42,7 +52,19 @@ export default function App() {
     return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : Number.NaN;
   }, [throughText]);
 
+  function canDiscardDraft(): boolean {
+    return !dirty || window.confirm('当前正文有未保存修改。确定放弃这些修改吗？');
+  }
+
+  function clearDocumentEditor() {
+    setManuscriptView(null);
+    setDraftContent('');
+    setDirty(false);
+    setSaveMessage(null);
+  }
+
   async function openProject() {
+    if (!canDiscardDraft()) return;
     setLoading(true);
     setError(null);
     try {
@@ -51,7 +73,7 @@ export default function App() {
       setSnapshot(next);
       setSelection(null);
       setEntityView(null);
-      setManuscriptView(null);
+      clearDocumentEditor();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -61,12 +83,18 @@ export default function App() {
 
   async function chooseManuscript(item: ManuscriptSummary) {
     if (!snapshot) return;
+    if (selection?.kind === 'manuscript' && selection.value.path === item.path && manuscriptView) return;
+    if (!canDiscardDraft()) return;
     setSelection({ kind: 'manuscript', value: item });
     setEntityView(null);
     setLoading(true);
     setError(null);
+    setSaveMessage(null);
     try {
-      setManuscriptView(await loadManuscript(projectPath, item.path));
+      const document = await loadManuscript(projectPath, item.path);
+      setManuscriptView(document);
+      setDraftContent(document.content);
+      setDirty(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -76,8 +104,9 @@ export default function App() {
 
   async function chooseEntity(item: EntitySummary) {
     if (!snapshot) return;
+    if (!canDiscardDraft()) return;
     setSelection({ kind: 'entity', value: item });
-    setManuscriptView(null);
+    clearDocumentEditor();
     setLoading(true);
     setError(null);
     try {
@@ -89,6 +118,65 @@ export default function App() {
     }
   }
 
+  function updateDraft(value: string) {
+    setDraftContent(value);
+    setDirty(value !== (manuscriptView?.content ?? ''));
+    setSaveMessage(null);
+  }
+
+  async function saveCurrentManuscript() {
+    if (!manuscriptView || !dirty || saving) return;
+    setSaving(true);
+    setError(null);
+    setSaveMessage(null);
+    try {
+      const result = await saveManuscript(
+        projectPath,
+        manuscriptView.path,
+        manuscriptView.sha256,
+        draftContent,
+      );
+      const nextView: ManuscriptView = {
+        ...manuscriptView,
+        content: draftContent,
+        sha256: result.sha256,
+        bytes: result.bytes,
+        characters: result.characters,
+        lines: result.lines,
+      };
+      setManuscriptView(nextView);
+      setDirty(false);
+      setSaveMessage(`已保存 · ${result.sha256.slice(0, 12)}`);
+      setSnapshot((current) => current ? {
+        ...current,
+        manuscripts: current.manuscripts.map((item) => item.path === result.path ? {
+          ...item,
+          sha256: result.sha256,
+          bytes: result.bytes,
+          characters: result.characters,
+          lines: result.lines,
+        } : item),
+      } : current);
+      setSelection((current) => {
+        if (!current || current.kind !== 'manuscript' || current.value.path !== result.path) return current;
+        return {
+          kind: 'manuscript',
+          value: {
+            ...current.value,
+            sha256: result.sha256,
+            bytes: result.bytes,
+            characters: result.characters,
+            lines: result.lines,
+          },
+        };
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const attention = (snapshot?.workflow.attention ?? {}) as Record<string, number>;
 
   return (
@@ -96,14 +184,14 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <div className="mark">S</div>
-          <div><strong>C.le. StoryOS</strong><span>Authoring Workspace · Read Only</span></div>
+          <div><strong>C.le. StoryOS</strong><span>Authoring Workspace · Manuscript CAS Write</span></div>
         </div>
         <div className="project-controls">
           <input value={projectPath} onChange={(event) => setProjectPath(event.target.value)} placeholder="StoryOS 项目目录" aria-label="StoryOS 项目目录" />
           <input className="through-input" value={throughText} onChange={(event) => setThroughText(event.target.value)} placeholder="sequence" aria-label="时间线 sequence" />
-          <button onClick={openProject} disabled={loading || !projectPath.trim()}>{loading ? '读取中…' : '打开项目'}</button>
+          <button onClick={openProject} disabled={loading || saving || !projectPath.trim()}>{loading ? '读取中…' : '打开项目'}</button>
         </div>
-        <div className="readonly-badge">只读桥接</div>
+        <div className="readonly-badge writer-badge">正文可写 · Canon 只读</div>
       </header>
 
       {error && <div className="error-banner">{error}</div>}
@@ -119,7 +207,7 @@ export default function App() {
             <button className={navMode === 'entities' ? 'active' : ''} onClick={() => setNavMode('entities')}>实体 {snapshot?.entities.length ?? 0}</button>
           </div>
           <div className="nav-list">
-            {!snapshot && <div className="empty-state">输入 StoryOS 项目目录后打开。桌面端不会获得 Canon 写权限。</div>}
+            {!snapshot && <div className="empty-state">输入 StoryOS 项目目录后打开。正文工作副本可保存，但桌面端不会获得 Canon 或 Staging 写权限。</div>}
             {snapshot && navMode === 'manuscripts' && snapshot.manuscripts.map((item) => (
               <button key={item.path} className={selection?.kind === 'manuscript' && selection.value.path === item.path ? 'nav-item selected' : 'nav-item'} onClick={() => chooseManuscript(item)}>
                 <span className="nav-index">EP{String(item.episode ?? '—').padStart(2, '0')}</span>
@@ -140,15 +228,34 @@ export default function App() {
             <div className="landing">
               <span className="eyebrow">CURRENT STORY STATE</span>
               <h1>{snapshot ? '选择正文或实体' : 'StoryOS 创作工作台'}</h1>
-              <p>{snapshot ? `当前有效时间线：${snapshot.timeline.effective_through_sequence ?? '无 Event'}` : 'Canonical State、Review、Materialization 与 Commit readiness 都由后端确定性引擎提供。桌面层只负责阅读和导航。'}</p>
+              <p>{snapshot ? `当前有效时间线：${snapshot.timeline.effective_through_sequence ?? '无 Event'}` : 'Canonical State、Review、Materialization 与 Commit readiness 仍由后端确定性引擎提供。桌面层只新增正文工作副本的 CAS 保存能力。'}</p>
               {snapshot && <div className="stats-row"><Stat label="Events" value={snapshot.timeline.events} /><Stat label="Canon" value={snapshot.summary.canon_facts} /><Stat label="Claims" value={snapshot.summary.claims} /></div>}
             </div>
           )}
           {manuscriptView && (
-            <article className="document-view">
-              <div className="document-meta"><span>S{String(manuscriptView.season ?? 1).padStart(2, '0')} · EP{String(manuscriptView.episode ?? '—').padStart(2, '0')}</span><span>{manuscriptView.characters.toLocaleString()} 字符</span><span className="hash">{manuscriptView.sha256.slice(0, 12)}</span></div>
-              <h1>{manuscriptView.title}</h1>
-              <pre>{manuscriptView.content}</pre>
+            <article className="document-view editor-document">
+              <div className="document-meta"><span>S{String(manuscriptView.season ?? 1).padStart(2, '0')} · EP{String(manuscriptView.episode ?? '—').padStart(2, '0')}</span><span>{draftContent.length.toLocaleString()} 字符</span><span className="hash">{manuscriptView.sha256.slice(0, 12)}</span></div>
+              <div className="editor-heading">
+                <div><span className="eyebrow">MANUSCRIPT WORKING COPY</span><h1>{manuscriptView.title}</h1></div>
+                <div className="editor-actions">
+                  <span className={dirty ? 'draft-state dirty' : 'draft-state'}>{dirty ? '未保存' : saveMessage ?? '已同步'}</span>
+                  <button className="save-button" onClick={saveCurrentManuscript} disabled={!dirty || saving}>{saving ? '保存中…' : '保存正文'}</button>
+                </div>
+              </div>
+              <textarea
+                className="manuscript-editor"
+                value={draftContent}
+                onChange={(event) => updateDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+                    event.preventDefault();
+                    void saveCurrentManuscript();
+                  }
+                }}
+                aria-label={`${manuscriptView.title} 正文编辑器`}
+                spellCheck={false}
+              />
+              <div className="editor-footer"><span>保存使用 SHA-256 compare-and-swap；磁盘版本变化时会拒绝覆盖。</span><span>Ctrl/Cmd + S</span></div>
             </article>
           )}
           {entityView && (
@@ -164,7 +271,7 @@ export default function App() {
         </section>
 
         <aside className="panel inspector">
-          <div className="panel-heading"><div><span className="eyebrow">SAFETY / WORKFLOW</span><h2>检查器</h2></div><span className="readonly-badge compact">READ ONLY</span></div>
+          <div className="panel-heading"><div><span className="eyebrow">SAFETY / WORKFLOW</span><h2>检查器</h2></div><span className="readonly-badge compact writer-badge">MANUSCRIPT WRITE</span></div>
           <section className="inspector-section">
             <h3>时间线</h3>
             <div className="stats-grid"><Stat label="当前 sequence" value={snapshot?.timeline.effective_through_sequence} /><Stat label="总 Events" value={snapshot?.timeline.events_total} /></div>
@@ -180,7 +287,7 @@ export default function App() {
             </div>
           </section>
           <section className="inspector-section"><h3>Canon Authority</h3>{snapshot ? <JsonRows value={snapshot.canon.authorities} /> : <div className="empty-inline">—</div>}</section>
-          <section className="inspector-section"><h3>安全边界</h3><ul className="policy-list"><li><span className="ok" />Workspace 只读</li><li><span className="ok" />Canonical mutation 禁止</li><li><span className="ok" />Staging mutation 禁止</li><li><span className="ok" />无通用 Shell IPC</li></ul></section>
+          <section className="inspector-section"><h3>安全边界</h3><ul className="policy-list"><li><span className="ok" />Snapshot / Entity / Manuscript 读取只读</li><li><span className="ok" />正文保存必须匹配加载时 SHA-256</li><li><span className="ok" />Canonical mutation 禁止</li><li><span className="ok" />Staging mutation 禁止</li><li><span className="ok" />无通用 Shell IPC</li></ul></section>
           {!!snapshot?.diagnostics.reference_errors.length && <section className="inspector-section danger"><h3>Reference Errors</h3>{snapshot.diagnostics.reference_errors.map((item) => <div key={item} className="diagnostic">{item}</div>)}</section>}
         </aside>
       </section>

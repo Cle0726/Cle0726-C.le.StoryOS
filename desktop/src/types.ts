@@ -103,8 +103,28 @@ export interface ManuscriptView {
   policy: ReadOnlyPolicy;
 }
 
+export interface ManuscriptSaveResult {
+  schema: 'story.authoring-manuscript-save.v1';
+  project_id: string;
+  path: string;
+  previous_sha256: string;
+  sha256: string;
+  bytes: number;
+  characters: number;
+  lines: number;
+  written: true;
+  policy: ManuscriptWritePolicy;
+}
+
 export interface ReadOnlyPolicy {
   read_only: true;
+  canonical_mutation: false;
+  staging_mutation: false;
+}
+
+export interface ManuscriptWritePolicy {
+  read_only: false;
+  manuscript_mutation: true;
   canonical_mutation: false;
   staging_mutation: false;
 }
