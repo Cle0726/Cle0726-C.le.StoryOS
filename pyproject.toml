@@ -21,6 +21,7 @@ desktop = [
 
 [project.scripts]
 storyos = "storyos.cli:main"
+storyos-manuscript = "storyos.manuscript_working_copy_cli:main"
 
 [tool.setuptools]
 packages = ["storyos"]
