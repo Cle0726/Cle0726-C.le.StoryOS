@@ -14,6 +14,7 @@ from storyos.manuscript_writer import (
 )
 from storyos.project import StoryProject
 from storyos.project_session import ProjectSession
+from storyos.scene_workspace import SceneWorkspace, SceneWorkspaceError
 from storyos.workspace import AuthoringWorkspace, AuthoringWorkspaceError
 
 
@@ -76,6 +77,19 @@ def main() -> None:
     p_snapshot = sub.add_parser("snapshot", help="Build a read-only authoring workspace snapshot")
     p_snapshot.add_argument("project")
     p_snapshot.add_argument("--through", type=int, default=None)
+
+    p_scene = sub.add_parser(
+        "scene",
+        help="Build a read-only scene/episode workspace anchored to one manuscript",
+    )
+    p_scene.add_argument("project")
+    p_scene.add_argument("path", help="Project-relative manuscript path returned by snapshot")
+    p_scene.add_argument("--through", type=int, default=None)
+    p_scene.add_argument(
+        "--pov",
+        default=None,
+        help="Optional character entity ID; enables conservative POV-safe context",
+    )
 
     p_entity = sub.add_parser("entity", help="Build a read-only focused view for one story entity")
     p_entity.add_argument("project")
@@ -142,6 +156,13 @@ def main() -> None:
             payload = ProjectSession().build(project)
         elif args.command == "snapshot":
             payload = workspace.build_snapshot(project, through_sequence=args.through)
+        elif args.command == "scene":
+            payload = SceneWorkspace().build(
+                project,
+                args.path,
+                through_sequence=args.through,
+                pov_entity_id=args.pov,
+            )
         elif args.command == "entity":
             payload = workspace.build_entity_view(
                 project, args.entity_id, through_sequence=args.through
@@ -187,6 +208,7 @@ def main() -> None:
                 )
     except (
         AuthoringWorkspaceError,
+        SceneWorkspaceError,
         ManuscriptHistoryError,
         ManuscriptRecoveryError,
         ManuscriptWriteError,
