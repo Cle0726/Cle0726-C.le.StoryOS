@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from storyos.manuscript_history import ManuscriptHistory, ManuscriptHistoryError
 from storyos.project import StoryProject
 from storyos.workspace import AuthoringWorkspace, AuthoringWorkspaceError
 
@@ -26,10 +27,13 @@ class ManuscriptWriter:
 
     This class has no Canon, staging, review, materialization, or claim mutation methods.
     It deliberately reuses the read-only workspace path validator before every write.
+    Immediately before replacing a manuscript it archives the version being replaced
+    into the content-addressed manuscript history store.
     """
 
     def __init__(self) -> None:
         self._workspace = AuthoringWorkspace()
+        self._history = ManuscriptHistory()
 
     def save(
         self,
@@ -76,6 +80,7 @@ class ManuscriptWriter:
 
         previous_mode = stat.S_IMODE(path.stat().st_mode)
         temp_path: Path | None = None
+        archived: dict[str, Any] | None = None
         try:
             fd, raw_temp = tempfile.mkstemp(
                 prefix=f".{path.name}.storyos-",
@@ -93,7 +98,8 @@ class ManuscriptWriter:
                 # Permission-mode preservation is best effort on platforms that do not expose it.
                 pass
 
-            # Recheck immediately before replace so another editor cannot be silently overwritten.
+            # Recheck immediately before history/archive + replace so another editor cannot
+            # be silently overwritten. No history mutation happens on a stale save.
             if candidate.is_symlink():
                 raise ManuscriptWriteError("manuscript became a symlink before save")
             latest_raw = path.read_bytes()
@@ -103,6 +109,11 @@ class ManuscriptWriter:
                     "manuscript changed during save; reload before retrying "
                     f"(expected {expected}, current {latest_sha})"
                 )
+
+            try:
+                archived = self._history.archive_bytes(project, normalized_path, latest_raw)
+            except ManuscriptHistoryError as exc:
+                raise ManuscriptWriteError(f"failed to archive previous manuscript revision: {exc}") from exc
 
             os.replace(temp_path, path)
             temp_path = None
@@ -126,9 +137,14 @@ class ManuscriptWriter:
             "characters": len(decoded),
             "lines": 0 if not decoded else decoded.count("\n") + 1,
             "written": True,
+            "history": {
+                "archived_previous_sha256": str((archived or {}).get("sha256") or expected),
+                "created": bool((archived or {}).get("created", False)),
+            },
             "policy": {
                 "read_only": False,
                 "manuscript_mutation": True,
+                "history_mutation": True,
                 "canonical_mutation": False,
                 "staging_mutation": False,
             },
