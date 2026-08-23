@@ -56,7 +56,6 @@ def _conflict_payload(
             "read_only": True,
             "manuscript_mutation": False,
             "history_mutation": False,
-            "recovery_mutation": False,
             "canonical_mutation": False,
             "staging_mutation": False,
         },
