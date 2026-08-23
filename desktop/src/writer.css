@@ -89,12 +89,26 @@
   box-shadow: 0 0 0 3px rgba(104, 211, 145, 0.045);
 }
 
+.manuscript-editor:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .editor-footer {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   color: var(--muted, #8d96a8);
   font-size: 11px;
+}
+
+.recovery-status {
+  max-width: 46%;
+  text-align: right;
+}
+
+.recovery-status.error {
+  color: #f7c56d;
 }
 
 .conflict-card {
@@ -105,6 +119,16 @@
   border-radius: 14px;
   padding: 18px;
   background: rgba(245, 158, 11, 0.06);
+}
+
+.recovery-card {
+  border-color: rgba(104, 211, 145, 0.34);
+  background: rgba(104, 211, 145, 0.055);
+}
+
+.recovery-card .conflict-stat {
+  border-color: rgba(104, 211, 145, 0.26);
+  color: #8fe1ad;
 }
 
 .conflict-heading,
@@ -194,9 +218,20 @@
   cursor: pointer;
 }
 
+.conflict-actions button:disabled,
+.revision-preview button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .conflict-actions .danger-outline {
   border-color: rgba(245, 158, 11, 0.34);
   color: #f7c56d;
+}
+
+.recovery-card .conflict-actions .danger-outline {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: inherit;
 }
 
 .section-inline-heading > span {
@@ -292,6 +327,16 @@
 
   .manuscript-editor {
     min-height: 50vh;
+  }
+
+  .editor-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .recovery-status {
+    max-width: none;
+    text-align: left;
   }
 
   .conflict-grid {
