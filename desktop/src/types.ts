@@ -103,6 +103,38 @@ export interface ManuscriptView {
   policy: ReadOnlyPolicy;
 }
 
+export interface ManuscriptRevisionSummary {
+  sha256: string;
+  bytes: number;
+  characters: number;
+  lines: number;
+  current: boolean;
+  captured_mtime_ns: number | null;
+}
+
+export interface ManuscriptHistoryView {
+  schema: 'story.authoring-manuscript-history.v1';
+  project_id: string;
+  path: string;
+  current_sha256: string;
+  revisions: ManuscriptRevisionSummary[];
+  policy: ReadOnlyPolicy;
+}
+
+export interface ManuscriptRevisionView {
+  schema: 'story.authoring-manuscript-revision.v1';
+  project_id: string;
+  path: string;
+  sha256: string;
+  bytes: number;
+  characters: number;
+  lines: number;
+  current: boolean;
+  captured_mtime_ns?: number | null;
+  content: string;
+  policy: ReadOnlyPolicy;
+}
+
 export interface ManuscriptSaveResult {
   schema: 'story.authoring-manuscript-save.v1';
   project_id: string;
@@ -113,11 +145,41 @@ export interface ManuscriptSaveResult {
   characters: number;
   lines: number;
   written: true;
+  history: {
+    archived_previous_sha256: string;
+    created: boolean;
+  };
   policy: ManuscriptWritePolicy;
 }
 
+export interface ManuscriptConflictCurrent {
+  title: string;
+  season: number | null;
+  episode: number | null;
+  bytes: number;
+  characters: number;
+  lines: number;
+  sha256: string;
+  content: string;
+}
+
+export interface ManuscriptConflict {
+  schema: 'story.authoring-manuscript-conflict.v1';
+  project_id: string;
+  path: string;
+  reason: 'stale_working_copy';
+  expected_sha256: string;
+  current_sha256: string;
+  current: ManuscriptConflictCurrent;
+  policy: ReadOnlyPolicy;
+}
+
+export type ManuscriptSaveOutcome = ManuscriptSaveResult | ManuscriptConflict;
+
 export interface ReadOnlyPolicy {
   read_only: true;
+  manuscript_mutation?: false;
+  history_mutation?: false;
   canonical_mutation: false;
   staging_mutation: false;
 }
@@ -125,6 +187,7 @@ export interface ReadOnlyPolicy {
 export interface ManuscriptWritePolicy {
   read_only: false;
   manuscript_mutation: true;
+  history_mutation: true;
   canonical_mutation: false;
   staging_mutation: false;
 }
