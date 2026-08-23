@@ -10,6 +10,8 @@ import yaml
 from storyos.ids import stable_id
 from storyos.project import StoryProject
 from storyos.scene_workspace import SceneWorkspace, SceneWorkspaceError
+from storyos.workspace import AuthoringWorkspaceError
+from storyos.workspace_cli import main as workspace_cli_main
 
 
 ARIA = stable_id("character", "scene-workspace-test", "aria")
@@ -265,3 +267,30 @@ def test_scene_workspace_rejects_invalid_boundary_pov_and_path_without_writes(tm
     with pytest.raises(AuthoringWorkspaceError, match="escapes"):
         service.build(project, "manuscript/../storyos.yaml")
     assert _tree_snapshot(project.root) == before
+
+
+def test_scene_workspace_cli_author_and_pov_protocol(tmp_path, monkeypatch, capsys):
+    project = _make_project(tmp_path / "project")
+    path = "manuscript/S01/EP02_Second.txt"
+
+    monkeypatch.setattr(
+        "sys.argv",
+        ["storyos-workspace", "scene", str(project.root), path],
+    )
+    workspace_cli_main()
+    author = json.loads(capsys.readouterr().out)
+    assert author["schema"] == "story.authoring-scene-workspace.v1"
+    assert author["mode"] == "author"
+    assert author["timeline"]["effective_through_sequence"] == 20
+    assert "content" not in author["manuscript"]
+
+    monkeypatch.setattr(
+        "sys.argv",
+        ["storyos-workspace", "scene", str(project.root), path, "--pov", CADEN],
+    )
+    workspace_cli_main()
+    pov = json.loads(capsys.readouterr().out)
+    assert pov["mode"] == "pov"
+    assert [row["id"] for row in pov["characters"]] == [CADEN]
+    assert pov["canon_conflicts"] == []
+    assert "sealed-platform" not in json.dumps(pov, ensure_ascii=False)
