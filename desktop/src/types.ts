@@ -98,6 +98,102 @@ export interface WorkspaceSnapshot {
   policy: ReadOnlyPolicy & { mutation_commands_are_separate: true };
 }
 
+export interface SceneKnowledgeFact {
+  id: string;
+  kind: 'canon_fact' | 'knowledge_token';
+  subject?: string;
+  predicate?: string;
+  value?: unknown;
+  authority?: string;
+  active?: boolean;
+  revealed?: boolean;
+}
+
+export interface SceneCharacterView {
+  id: string;
+  name: string;
+  aliases: string[];
+  scene_relevant: boolean;
+  location: unknown;
+  state: Record<string, unknown>;
+  knowledge: {
+    visible: SceneKnowledgeFact[];
+    visible_count: number;
+    hidden_by_reveal: number;
+    hidden_ungoverned: number;
+  };
+  latest_event_sequence: number | null;
+  event_count: number;
+  data?: Record<string, unknown>;
+}
+
+export interface SceneNavigationTarget {
+  path: string;
+  title: string;
+  season: number | null;
+  episode: number | null;
+  sha256: string;
+}
+
+export interface SceneWorkspaceView {
+  schema: 'story.authoring-scene-workspace.v1';
+  project_id: string;
+  mode: 'author' | 'pov';
+  pov: {
+    id: string;
+    name: string;
+    aliases: string[];
+  } | null;
+  manuscript: ManuscriptSummary;
+  timeline: {
+    requested_through_sequence: number | null;
+    effective_through_sequence: number | null;
+    boundary_source: string;
+    episode_events: number;
+    visible_events: number;
+  };
+  navigation: {
+    index: number;
+    total: number;
+    previous: SceneNavigationTarget | null;
+    next: SceneNavigationTarget | null;
+  };
+  episode_events: Array<{
+    id: string;
+    subject: string;
+    subject_name: string;
+    type: string;
+    sequence: number;
+    scene: number | null;
+  }>;
+  characters: SceneCharacterView[];
+  canon_conflicts: Array<{
+    subject: string;
+    subject_name: string;
+    predicate: string;
+    facts: Array<{ id: string; value: unknown; authority: string }>;
+  }>;
+  open_plots: Array<{
+    id: string;
+    name: string;
+    aliases: string[];
+    data: Record<string, unknown>;
+    scene_relevant: boolean;
+    last_status_sequence: number | null;
+    last_status_event_id: string | null;
+    status: 'open';
+  }>;
+  workflow_attention: Record<string, number>;
+  actions_available: Array<Record<string, unknown>>;
+  policy: ReadOnlyPolicy & {
+    pov_safe: boolean;
+    other_character_state_exposed: boolean;
+    global_canon_conflicts_exposed: boolean;
+    global_plot_threads_exposed: boolean;
+    manuscript_content_included: false;
+  };
+}
+
 export interface EntityView {
   schema: 'story.authoring-entity.v1';
   project_id: string;

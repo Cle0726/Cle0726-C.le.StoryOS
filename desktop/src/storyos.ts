@@ -9,6 +9,7 @@ import type {
   ManuscriptSaveOutcome,
   ManuscriptView,
   ProjectSessionView,
+  SceneWorkspaceView,
   WorkspaceSnapshot,
 } from './types';
 
@@ -148,6 +149,58 @@ export async function loadProjectSession(project: string): Promise<ProjectSessio
     throw new Error('StoryOS Session 拒绝了包含 recovery 正文的启动数据');
   }
   return payload as ProjectSessionView;
+}
+
+export async function loadSceneWorkspace(
+  project: string,
+  manuscriptPath: string,
+  through?: number | null,
+  povEntityId?: string | null,
+): Promise<SceneWorkspaceView> {
+  const payload = await invoke<unknown>('storyos_scene_workspace', {
+    project: nonEmpty(project, '项目路径'),
+    manuscriptPath: nonEmpty(manuscriptPath, '正文路径'),
+    through: timelineBoundary(through),
+    povEntityId: povEntityId ? nonEmpty(povEntityId, 'POV 实体 ID') : null,
+  });
+  if (!payload || typeof payload !== 'object') throw new Error('StoryOS Scene Workspace 返回了无效响应');
+  const row = payload as Record<string, unknown>;
+  if (row.schema !== 'story.authoring-scene-workspace.v1') {
+    throw new Error(`StoryOS Scene Workspace schema 不匹配：${String(row.schema ?? '')}`);
+  }
+  const policy = row.policy as Record<string, unknown> | undefined;
+  if (
+    !policy
+    || policy.read_only !== true
+    || policy.manuscript_mutation !== false
+    || policy.history_mutation !== false
+    || policy.recovery_mutation !== false
+    || policy.canonical_mutation !== false
+    || policy.staging_mutation !== false
+    || policy.manuscript_content_included !== false
+  ) {
+    throw new Error('StoryOS Scene Workspace 拒绝了越权或正文泄漏响应');
+  }
+  const manuscript = row.manuscript as Record<string, unknown> | undefined;
+  if (!manuscript || 'content' in manuscript) {
+    throw new Error('StoryOS Scene Workspace 拒绝了包含正文内容的上下文响应');
+  }
+  if (row.mode === 'pov') {
+    if (
+      policy.pov_safe !== true
+      || policy.other_character_state_exposed !== false
+      || policy.global_canon_conflicts_exposed !== false
+      || policy.global_plot_threads_exposed !== false
+    ) {
+      throw new Error('StoryOS Scene Workspace 拒绝了不安全的 POV 响应');
+    }
+    const characters = Array.isArray(row.characters) ? row.characters : [];
+    const pov = row.pov as Record<string, unknown> | null | undefined;
+    if (!pov || characters.length !== 1 || (characters[0] as Record<string, unknown>).id !== pov.id) {
+      throw new Error('StoryOS Scene Workspace 拒绝了包含其他角色状态的 POV 响应');
+    }
+  }
+  return payload as SceneWorkspaceView;
 }
 
 export async function pickProjectDirectory(): Promise<string | null> {
