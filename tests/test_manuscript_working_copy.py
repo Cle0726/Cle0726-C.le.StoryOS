@@ -15,7 +15,7 @@ from storyos.project import StoryProject
 def make_project(tmp_path: Path) -> tuple[StoryProject, Path]:
     (tmp_path / "manuscript").mkdir()
     target = tmp_path / "manuscript" / "EP01.txt"
-    target.write_text("原稿\n", encoding="utf-8")
+    target.write_bytes("原稿\n".encode("utf-8"))
     (tmp_path / "storyos.yaml").write_text(
         yaml.safe_dump(
             {
@@ -50,7 +50,7 @@ def test_save_is_atomic_and_reports_new_hash(tmp_path: Path):
     assert result["status"] == "saved"
     assert result["previous_sha256"] == before
     assert result["sha256"] == sha256(target)
-    assert target.read_text(encoding="utf-8") == "修改后的正文\n第二行\n"
+    assert target.read_bytes() == "修改后的正文\n第二行\n".encode("utf-8")
     assert result["policy"]["canonical_mutation"] is False
     assert result["policy"]["staging_mutation"] is False
 
@@ -58,7 +58,7 @@ def test_save_is_atomic_and_reports_new_hash(tmp_path: Path):
 def test_external_change_causes_conflict_instead_of_overwrite(tmp_path: Path):
     project, target = make_project(tmp_path)
     editor_hash = sha256(target)
-    target.write_text("外部修改\n", encoding="utf-8")
+    target.write_bytes("外部修改\n".encode("utf-8"))
 
     with pytest.raises(ManuscriptConflictError):
         ManuscriptWorkingCopy().save(
@@ -68,7 +68,7 @@ def test_external_change_causes_conflict_instead_of_overwrite(tmp_path: Path):
             content="编辑器中的旧内容",
         )
 
-    assert target.read_text(encoding="utf-8") == "外部修改\n"
+    assert target.read_bytes() == "外部修改\n".encode("utf-8")
 
 
 def test_path_escape_is_rejected(tmp_path: Path):
