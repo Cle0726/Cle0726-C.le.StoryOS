@@ -10,6 +10,10 @@ from storyos.duanxian_import import DuanxianImportError, DuanxianV39Importer
 from storyos.knowledge import KnowledgeTimeline
 from storyos.project import StoryProject
 from storyos.state import StoryStateProjector
+from storyos.worldstate_claims import (
+    DuanxianWorldStateClaimExtractor,
+    WorldStateClaimExtractionError,
+)
 
 
 def _fact_payload(fact):
@@ -38,6 +42,17 @@ def main() -> None:
     p_import.add_argument("source")
     p_import.add_argument("target")
     p_import.add_argument("--allow-dirty-source", action="store_true")
+
+    p_worldstate = sub.add_parser(
+        "worldstate-claims",
+        help="Analyze imported World State records into non-canonical Candidate Claims",
+    )
+    p_worldstate.add_argument("project")
+    p_worldstate.add_argument(
+        "--write",
+        action="store_true",
+        help="Persist deterministic Claims under staging/claims/world_state; default is dry-run",
+    )
 
     p_validate = sub.add_parser("validate", help="Validate canonical and staging project files")
     p_validate.add_argument("project")
@@ -75,6 +90,22 @@ def main() -> None:
         return
 
     project = StoryProject.open(args.project)
+
+    if args.command == "worldstate-claims":
+        extractor = DuanxianWorldStateClaimExtractor()
+        try:
+            extraction = extractor.analyze(project)
+            persistence = (
+                extractor.persist(project, extraction)
+                if args.write
+                else {"write": False, "claims_total": len(extraction.claims)}
+            )
+        except WorldStateClaimExtractionError as exc:
+            parser.exit(2, f"storyos: World State extraction failed: {exc}\n")
+        payload = extraction.report()
+        payload["persistence"] = persistence
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return
 
     if args.command == "validate":
         entities = project.load_entities()
