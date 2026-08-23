@@ -1,3 +1,37 @@
+export interface ProjectSessionRecovery {
+  path: string;
+  title: string;
+  season: number | null;
+  episode: number | null;
+  current_sha256: string;
+  base_sha256: string;
+  draft_sha256: string;
+  bytes: number;
+  characters: number;
+  lines: number;
+  captured_mtime_ns: number;
+  base_matches_current: boolean;
+  draft_matches_current: boolean;
+  recoverable: true;
+}
+
+export interface ProjectSessionView {
+  schema: 'story.authoring-project-session.v1';
+  project: {
+    id: string;
+    name: string;
+    language: string;
+  };
+  summary: {
+    manuscripts: number;
+    recovery_slots: number;
+    recoverable_drafts: number;
+    stale_base_drafts: number;
+  };
+  recoveries: ProjectSessionRecovery[];
+  policy: ReadOnlyPolicy;
+}
+
 export interface ManuscriptSummary {
   path: string;
   name: string;

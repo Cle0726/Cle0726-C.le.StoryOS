@@ -13,6 +13,7 @@ from storyos.manuscript_writer import (
     ManuscriptWriter,
 )
 from storyos.project import StoryProject
+from storyos.project_session import ProjectSession
 from storyos.workspace import AuthoringWorkspace, AuthoringWorkspaceError
 
 
@@ -65,6 +66,12 @@ def _conflict_payload(
 def main() -> None:
     parser = argparse.ArgumentParser(prog="storyos-workspace")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p_session = sub.add_parser(
+        "session",
+        help="Build a compact read-only project session view for launcher/recovery entry",
+    )
+    p_session.add_argument("project")
 
     p_snapshot = sub.add_parser("snapshot", help="Build a read-only authoring workspace snapshot")
     p_snapshot.add_argument("project")
@@ -131,7 +138,9 @@ def main() -> None:
         workspace = AuthoringWorkspace()
         history = ManuscriptHistory()
         recovery = ManuscriptRecovery()
-        if args.command == "snapshot":
+        if args.command == "session":
+            payload = ProjectSession().build(project)
+        elif args.command == "snapshot":
             payload = workspace.build_snapshot(project, through_sequence=args.through)
         elif args.command == "entity":
             payload = workspace.build_entity_view(

@@ -8,6 +8,7 @@ import type {
   ManuscriptRevisionView,
   ManuscriptSaveOutcome,
   ManuscriptView,
+  ProjectSessionView,
   WorkspaceSnapshot,
 } from './types';
 
@@ -119,6 +120,41 @@ async function callWorkspace<T>(
   if (!allowed.includes(schema)) throw new Error(`StoryOS Workspace schema 不匹配：${schema}`);
   verifyPolicy(row, request.action, schema);
   return payload as T;
+}
+
+export async function loadProjectSession(project: string): Promise<ProjectSessionView> {
+  const payload = await invoke<unknown>('storyos_project_session', {
+    project: nonEmpty(project, '项目路径'),
+  });
+  if (!payload || typeof payload !== 'object') throw new Error('StoryOS Session 返回了无效响应');
+  const row = payload as Record<string, unknown>;
+  if (row.schema !== 'story.authoring-project-session.v1') {
+    throw new Error(`StoryOS Session schema 不匹配：${String(row.schema ?? '')}`);
+  }
+  const policy = row.policy as Record<string, unknown> | undefined;
+  if (
+    !policy
+    || policy.read_only !== true
+    || policy.manuscript_mutation !== false
+    || policy.history_mutation !== false
+    || policy.recovery_mutation !== false
+    || policy.canonical_mutation !== false
+    || policy.staging_mutation !== false
+  ) {
+    throw new Error('StoryOS Session 拒绝了非只读响应');
+  }
+  const recoveries = Array.isArray(row.recoveries) ? row.recoveries : [];
+  if (recoveries.some((item) => item && typeof item === 'object' && 'content' in (item as object))) {
+    throw new Error('StoryOS Session 拒绝了包含 recovery 正文的启动数据');
+  }
+  return payload as ProjectSessionView;
+}
+
+export async function pickProjectDirectory(): Promise<string | null> {
+  const path = await invoke<unknown>('pick_project_directory');
+  if (path == null) return null;
+  if (typeof path !== 'string') throw new Error('系统文件夹选择器返回了无效路径');
+  return nonEmpty(path, '项目路径');
 }
 
 export function loadWorkspace(project: string, through?: number | null): Promise<WorkspaceSnapshot> {
