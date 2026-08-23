@@ -20,6 +20,12 @@ enum WorkspaceAction {
     ManuscriptHistory,
     #[serde(rename = "manuscript-revision")]
     ManuscriptRevision,
+    #[serde(rename = "manuscript-recovery")]
+    ManuscriptRecovery,
+    #[serde(rename = "manuscript-recovery-save")]
+    ManuscriptRecoverySave,
+    #[serde(rename = "manuscript-recovery-clear")]
+    ManuscriptRecoveryClear,
     #[serde(rename = "manuscript-save")]
     ManuscriptSave,
 }
@@ -32,6 +38,9 @@ impl WorkspaceAction {
             Self::Manuscript => "manuscript",
             Self::ManuscriptHistory => "manuscript-history",
             Self::ManuscriptRevision => "manuscript-revision",
+            Self::ManuscriptRecovery => "manuscript-recovery",
+            Self::ManuscriptRecoverySave => "manuscript-recovery-save",
+            Self::ManuscriptRecoveryClear => "manuscript-recovery-clear",
             Self::ManuscriptSave => "manuscript-save",
         }
     }
@@ -43,6 +52,9 @@ impl WorkspaceAction {
             Self::Manuscript => &["story.authoring-manuscript.v1"],
             Self::ManuscriptHistory => &["story.authoring-manuscript-history.v1"],
             Self::ManuscriptRevision => &["story.authoring-manuscript-revision.v1"],
+            Self::ManuscriptRecovery => &["story.authoring-manuscript-recovery.v1"],
+            Self::ManuscriptRecoverySave => &["story.authoring-manuscript-recovery-save.v1"],
+            Self::ManuscriptRecoveryClear => &["story.authoring-manuscript-recovery-clear.v1"],
             Self::ManuscriptSave => &[
                 "story.authoring-manuscript-save.v1",
                 "story.authoring-manuscript-conflict.v1",
@@ -50,8 +62,8 @@ impl WorkspaceAction {
         }
     }
 
-    fn is_manuscript_write(self) -> bool {
-        matches!(self, Self::ManuscriptSave)
+    fn uses_stdin_content(self) -> bool {
+        matches!(self, Self::ManuscriptSave | Self::ManuscriptRecoverySave)
     }
 }
 
@@ -64,6 +76,8 @@ pub struct WorkspaceRequest {
     manuscript_path: Option<String>,
     expected_sha256: Option<String>,
     revision_sha256: Option<String>,
+    base_sha256: Option<String>,
+    expected_draft_sha256: Option<String>,
     content: Option<String>,
     through: Option<u64>,
 }
@@ -138,34 +152,35 @@ fn validate_relative_manuscript_path(value: &str) -> Result<String, String> {
     Ok(raw)
 }
 
+fn no_extra_fields(request: &WorkspaceRequest) -> bool {
+    request.entity_id.is_none()
+        && request.manuscript_path.is_none()
+        && request.expected_sha256.is_none()
+        && request.revision_sha256.is_none()
+        && request.base_sha256.is_none()
+        && request.expected_draft_sha256.is_none()
+        && request.content.is_none()
+}
+
 fn build_args(request: &WorkspaceRequest) -> Result<Vec<String>, String> {
     let project = require_plain_text(&request.project, "project path")?;
     let mut args = vec![request.action.cli_name().to_owned(), project];
 
     match request.action {
         WorkspaceAction::Snapshot => {
-            if request.entity_id.is_some()
-                || request.manuscript_path.is_some()
-                || request.expected_sha256.is_some()
-                || request.revision_sha256.is_some()
-                || request.content.is_some()
-            {
-                return Err(
-                    "snapshot does not accept entityId, manuscriptPath, expectedSha256, revisionSha256 or content"
-                        .to_owned(),
-                );
+            if !no_extra_fields(request) {
+                return Err("snapshot accepts only project and optional through".to_owned());
             }
         }
         WorkspaceAction::Entity => {
             if request.manuscript_path.is_some()
                 || request.expected_sha256.is_some()
                 || request.revision_sha256.is_some()
+                || request.base_sha256.is_some()
+                || request.expected_draft_sha256.is_some()
                 || request.content.is_some()
             {
-                return Err(
-                    "entity does not accept manuscriptPath, expectedSha256, revisionSha256 or content"
-                        .to_owned(),
-                );
+                return Err("entity accepts only entityId and optional through".to_owned());
             }
             let entity_id = require_plain_text(
                 request
@@ -179,11 +194,15 @@ fn build_args(request: &WorkspaceRequest) -> Result<Vec<String>, String> {
             }
             args.push(entity_id);
         }
-        WorkspaceAction::Manuscript | WorkspaceAction::ManuscriptHistory => {
+        WorkspaceAction::Manuscript
+        | WorkspaceAction::ManuscriptHistory
+        | WorkspaceAction::ManuscriptRecovery => {
             if request.entity_id.is_some()
                 || request.through.is_some()
                 || request.expected_sha256.is_some()
                 || request.revision_sha256.is_some()
+                || request.base_sha256.is_some()
+                || request.expected_draft_sha256.is_some()
                 || request.content.is_some()
             {
                 return Err(format!(
@@ -201,6 +220,8 @@ fn build_args(request: &WorkspaceRequest) -> Result<Vec<String>, String> {
             if request.entity_id.is_some()
                 || request.through.is_some()
                 || request.expected_sha256.is_some()
+                || request.base_sha256.is_some()
+                || request.expected_draft_sha256.is_some()
                 || request.content.is_some()
             {
                 return Err(
@@ -219,13 +240,72 @@ fn build_args(request: &WorkspaceRequest) -> Result<Vec<String>, String> {
             args.push(validate_relative_manuscript_path(manuscript)?);
             args.push(validate_sha256(revision, "revision SHA-256")?);
         }
+        WorkspaceAction::ManuscriptRecoverySave => {
+            if request.entity_id.is_some()
+                || request.through.is_some()
+                || request.expected_sha256.is_some()
+                || request.revision_sha256.is_some()
+                || request.expected_draft_sha256.is_some()
+            {
+                return Err(
+                    "manuscript-recovery-save accepts only manuscriptPath, baseSha256 and content"
+                        .to_owned(),
+                );
+            }
+            let manuscript = request
+                .manuscript_path
+                .as_deref()
+                .ok_or("manuscript-recovery-save requires manuscriptPath")?;
+            let base = request
+                .base_sha256
+                .as_deref()
+                .ok_or("manuscript-recovery-save requires baseSha256")?;
+            let content = request
+                .content
+                .as_deref()
+                .ok_or("manuscript-recovery-save requires content")?;
+            if content.len() > MAX_MANUSCRIPT_INPUT_BYTES {
+                return Err("recovery draft exceeded the desktop safety limit".to_owned());
+            }
+            if content.contains('\0') {
+                return Err("recovery draft cannot contain NUL characters".to_owned());
+            }
+            args.push(validate_relative_manuscript_path(manuscript)?);
+            args.push(validate_sha256(base, "recovery base SHA-256")?);
+        }
+        WorkspaceAction::ManuscriptRecoveryClear => {
+            if request.entity_id.is_some()
+                || request.through.is_some()
+                || request.expected_sha256.is_some()
+                || request.revision_sha256.is_some()
+                || request.base_sha256.is_some()
+                || request.content.is_some()
+            {
+                return Err(
+                    "manuscript-recovery-clear accepts only manuscriptPath and expectedDraftSha256"
+                        .to_owned(),
+                );
+            }
+            let manuscript = request
+                .manuscript_path
+                .as_deref()
+                .ok_or("manuscript-recovery-clear requires manuscriptPath")?;
+            let expected = request
+                .expected_draft_sha256
+                .as_deref()
+                .ok_or("manuscript-recovery-clear requires expectedDraftSha256")?;
+            args.push(validate_relative_manuscript_path(manuscript)?);
+            args.push(validate_sha256(expected, "recovery draft SHA-256")?);
+        }
         WorkspaceAction::ManuscriptSave => {
             if request.entity_id.is_some()
                 || request.through.is_some()
                 || request.revision_sha256.is_some()
+                || request.base_sha256.is_some()
+                || request.expected_draft_sha256.is_some()
             {
                 return Err(
-                    "manuscript-save does not accept entityId, through or revisionSha256"
+                    "manuscript-save accepts only manuscriptPath, expectedSha256 and content"
                         .to_owned(),
                 );
             }
@@ -266,7 +346,7 @@ fn workspace_binary() -> String {
 fn run_workspace(request: &WorkspaceRequest, args: &[String]) -> Result<Output, String> {
     let mut command = Command::new(workspace_binary());
     command.args(args);
-    if !request.action.is_manuscript_write() {
+    if !request.action.uses_stdin_content() {
         return command
             .output()
             .map_err(|error| format!("failed to start storyos-workspace: {error}"));
@@ -275,7 +355,7 @@ fn run_workspace(request: &WorkspaceRequest, args: &[String]) -> Result<Output, 
     let content = request
         .content
         .as_deref()
-        .ok_or("manuscript-save requires content")?;
+        .ok_or("workspace write requires content")?;
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -318,25 +398,42 @@ fn verify_response(action: WorkspaceAction, value: &Value) -> Result<(), String>
         return Err("workspace response violated Canon/staging mutation policy".to_owned());
     }
 
-    if action == WorkspaceAction::ManuscriptSave {
-        if schema == "story.authoring-manuscript-conflict.v1" {
-            if policy.get("read_only").and_then(Value::as_bool) != Some(true)
+    match action {
+        WorkspaceAction::ManuscriptSave => {
+            if schema == "story.authoring-manuscript-conflict.v1" {
+                if policy.get("read_only").and_then(Value::as_bool) != Some(true)
+                    || policy.get("manuscript_mutation").and_then(Value::as_bool) != Some(false)
+                    || policy.get("history_mutation").and_then(Value::as_bool) != Some(false)
+                    || policy.get("recovery_mutation").and_then(Value::as_bool) == Some(true)
+                {
+                    return Err("manuscript conflict response violated read-only policy".to_owned());
+                }
+            } else if policy.get("read_only").and_then(Value::as_bool) != Some(false)
+                || policy.get("manuscript_mutation").and_then(Value::as_bool) != Some(true)
+                || policy.get("history_mutation").and_then(Value::as_bool) != Some(true)
+                || policy.get("recovery_mutation").and_then(Value::as_bool) == Some(true)
+            {
+                return Err("manuscript-save response violated manuscript/history write policy".to_owned());
+            }
+        }
+        WorkspaceAction::ManuscriptRecoverySave | WorkspaceAction::ManuscriptRecoveryClear => {
+            if policy.get("read_only").and_then(Value::as_bool) != Some(false)
                 || policy.get("manuscript_mutation").and_then(Value::as_bool) != Some(false)
                 || policy.get("history_mutation").and_then(Value::as_bool) != Some(false)
+                || policy.get("recovery_mutation").and_then(Value::as_bool) != Some(true)
             {
-                return Err("manuscript conflict response violated read-only policy".to_owned());
+                return Err("recovery response violated recovery-only write policy".to_owned());
             }
-        } else if policy.get("read_only").and_then(Value::as_bool) != Some(false)
-            || policy.get("manuscript_mutation").and_then(Value::as_bool) != Some(true)
-            || policy.get("history_mutation").and_then(Value::as_bool) != Some(true)
-        {
-            return Err("manuscript-save response violated manuscript/history write policy".to_owned());
         }
-    } else if policy.get("read_only").and_then(Value::as_bool) != Some(true)
-        || policy.get("manuscript_mutation").and_then(Value::as_bool) == Some(true)
-        || policy.get("history_mutation").and_then(Value::as_bool) == Some(true)
-    {
-        return Err("workspace response violated the read-only policy".to_owned());
+        _ => {
+            if policy.get("read_only").and_then(Value::as_bool) != Some(true)
+                || policy.get("manuscript_mutation").and_then(Value::as_bool) == Some(true)
+                || policy.get("history_mutation").and_then(Value::as_bool) == Some(true)
+                || policy.get("recovery_mutation").and_then(Value::as_bool) == Some(true)
+            {
+                return Err("workspace response violated the read-only policy".to_owned());
+            }
+        }
     }
     Ok(())
 }
@@ -373,6 +470,8 @@ mod tests {
             manuscript_path: None,
             expected_sha256: None,
             revision_sha256: None,
+            base_sha256: None,
+            expected_draft_sha256: None,
             content: None,
             through: None,
         }
@@ -417,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn history_and_revision_are_read_only_path_scoped_commands() {
+    fn history_revision_and_recovery_reads_are_path_scoped() {
         let mut history = request(WorkspaceAction::ManuscriptHistory);
         history.manuscript_path = Some("manuscript/S01/EP01.txt".to_owned());
         assert_eq!(
@@ -439,6 +538,13 @@ mod tests {
         );
         revision.revision_sha256 = Some("BAD".to_owned());
         assert!(build_args(&revision).is_err());
+
+        let mut recovery = request(WorkspaceAction::ManuscriptRecovery);
+        recovery.manuscript_path = Some("manuscript/S01/EP01.txt".to_owned());
+        assert_eq!(
+            build_args(&recovery).unwrap(),
+            vec!["manuscript-recovery", "C:/story/project", "manuscript/S01/EP01.txt"]
+        );
     }
 
     #[test]
@@ -461,6 +567,34 @@ mod tests {
     }
 
     #[test]
+    fn recovery_save_keeps_content_off_argv_and_clear_requires_exact_hash() {
+        let mut save = request(WorkspaceAction::ManuscriptRecoverySave);
+        save.manuscript_path = Some("manuscript/S01/EP01.txt".to_owned());
+        save.base_sha256 = Some("c".repeat(64));
+        save.content = Some("自动恢复草稿\n第二行".to_owned());
+        let args = build_args(&save).unwrap();
+        assert_eq!(args, vec![
+            "manuscript-recovery-save",
+            "C:/story/project",
+            "manuscript/S01/EP01.txt",
+            &"c".repeat(64),
+        ]);
+        assert!(!args.iter().any(|arg| arg.contains("自动恢复草稿")));
+
+        let mut clear = request(WorkspaceAction::ManuscriptRecoveryClear);
+        clear.manuscript_path = Some("manuscript/S01/EP01.txt".to_owned());
+        clear.expected_draft_sha256 = Some("d".repeat(64));
+        assert_eq!(build_args(&clear).unwrap(), vec![
+            "manuscript-recovery-clear",
+            "C:/story/project",
+            "manuscript/S01/EP01.txt",
+            &"d".repeat(64),
+        ]);
+        clear.expected_draft_sha256 = Some("BAD".to_owned());
+        assert!(build_args(&clear).is_err());
+    }
+
+    #[test]
     fn no_request_shape_can_name_canon_or_staging_mutation_subcommands() {
         for action in [
             WorkspaceAction::Snapshot,
@@ -468,6 +602,9 @@ mod tests {
             WorkspaceAction::Manuscript,
             WorkspaceAction::ManuscriptHistory,
             WorkspaceAction::ManuscriptRevision,
+            WorkspaceAction::ManuscriptRecovery,
+            WorkspaceAction::ManuscriptRecoverySave,
+            WorkspaceAction::ManuscriptRecoveryClear,
             WorkspaceAction::ManuscriptSave,
         ] {
             let mut row = request(action);
@@ -476,12 +613,23 @@ mod tests {
                 WorkspaceAction::Entity => {
                     row.entity_id = Some("chr_0123456789abcdef0123456789abcdef".to_owned());
                 }
-                WorkspaceAction::Manuscript | WorkspaceAction::ManuscriptHistory => {
+                WorkspaceAction::Manuscript
+                | WorkspaceAction::ManuscriptHistory
+                | WorkspaceAction::ManuscriptRecovery => {
                     row.manuscript_path = Some("manuscript/S01/EP01.txt".to_owned());
                 }
                 WorkspaceAction::ManuscriptRevision => {
                     row.manuscript_path = Some("manuscript/S01/EP01.txt".to_owned());
                     row.revision_sha256 = Some("b".repeat(64));
+                }
+                WorkspaceAction::ManuscriptRecoverySave => {
+                    row.manuscript_path = Some("manuscript/S01/EP01.txt".to_owned());
+                    row.base_sha256 = Some("c".repeat(64));
+                    row.content = Some("safe recovery draft".to_owned());
+                }
+                WorkspaceAction::ManuscriptRecoveryClear => {
+                    row.manuscript_path = Some("manuscript/S01/EP01.txt".to_owned());
+                    row.expected_draft_sha256 = Some("d".repeat(64));
                 }
                 WorkspaceAction::ManuscriptSave => {
                     row.manuscript_path = Some("manuscript/S01/EP01.txt".to_owned());
@@ -504,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn response_policy_distinguishes_reads_save_and_conflict() {
+    fn response_policy_distinguishes_reads_manuscript_writes_recovery_writes_and_conflicts() {
         let read = serde_json::json!({
             "schema": "story.authoring-workspace.v1",
             "policy": {
@@ -515,17 +663,31 @@ mod tests {
         });
         assert!(verify_response(WorkspaceAction::Snapshot, &read).is_ok());
 
-        let history = serde_json::json!({
-            "schema": "story.authoring-manuscript-history.v1",
+        let recovery_read = serde_json::json!({
+            "schema": "story.authoring-manuscript-recovery.v1",
             "policy": {
                 "read_only": true,
                 "manuscript_mutation": false,
                 "history_mutation": false,
+                "recovery_mutation": false,
                 "canonical_mutation": false,
                 "staging_mutation": false
             }
         });
-        assert!(verify_response(WorkspaceAction::ManuscriptHistory, &history).is_ok());
+        assert!(verify_response(WorkspaceAction::ManuscriptRecovery, &recovery_read).is_ok());
+
+        let recovery_write = serde_json::json!({
+            "schema": "story.authoring-manuscript-recovery-save.v1",
+            "policy": {
+                "read_only": false,
+                "manuscript_mutation": false,
+                "history_mutation": false,
+                "recovery_mutation": true,
+                "canonical_mutation": false,
+                "staging_mutation": false
+            }
+        });
+        assert!(verify_response(WorkspaceAction::ManuscriptRecoverySave, &recovery_write).is_ok());
 
         let write = serde_json::json!({
             "schema": "story.authoring-manuscript-save.v1",
@@ -545,6 +707,7 @@ mod tests {
                 "read_only": true,
                 "manuscript_mutation": false,
                 "history_mutation": false,
+                "recovery_mutation": false,
                 "canonical_mutation": false,
                 "staging_mutation": false
             }
@@ -552,15 +715,16 @@ mod tests {
         assert!(verify_response(WorkspaceAction::ManuscriptSave, &conflict).is_ok());
 
         let unsafe_value = serde_json::json!({
-            "schema": "story.authoring-manuscript-save.v1",
+            "schema": "story.authoring-manuscript-recovery-save.v1",
             "policy": {
                 "read_only": false,
                 "manuscript_mutation": true,
-                "history_mutation": true,
-                "canonical_mutation": true,
+                "history_mutation": false,
+                "recovery_mutation": true,
+                "canonical_mutation": false,
                 "staging_mutation": false
             }
         });
-        assert!(verify_response(WorkspaceAction::ManuscriptSave, &unsafe_value).is_err());
+        assert!(verify_response(WorkspaceAction::ManuscriptRecoverySave, &unsafe_value).is_err());
     }
 }
