@@ -5,6 +5,7 @@ import json
 from dataclasses import asdict
 
 from storyos.authority import CanonResolver
+from storyos.canon_commit import CanonCommitError, CanonCommitWorkbench
 from storyos.claim_review import ClaimReviewError, ClaimReviewWorkbench, ReviewDecision
 from storyos.claims import ClaimStager
 from storyos.knowledge import KnowledgeTimeline
@@ -76,6 +77,23 @@ def main() -> None:
     p_mat_stage = sub.add_parser("materialization-stage", help="Write one ready claim to quarantine staging")
     p_mat_stage.add_argument("project")
     p_mat_stage.add_argument("claim_id")
+
+    p_commit_plan = sub.add_parser(
+        "canon-commit-plan",
+        help="Inspect whether staged quarantine candidates are safe for explicit Canon commit",
+    )
+    p_commit_plan.add_argument("project")
+    p_commit_plan.add_argument("--claim", dest="claim_id", default=None)
+
+    p_commit = sub.add_parser(
+        "canon-commit",
+        help="Create one canonical Event/Fact from an exact reviewed quarantine candidate",
+    )
+    p_commit.add_argument("project")
+    p_commit.add_argument("claim_id")
+    p_commit.add_argument("--confirm-sha256", required=True)
+    p_commit.add_argument("--actor", required=True)
+    p_commit.add_argument("--note", default="")
 
     args = parser.parse_args()
     project = StoryProject.open(args.project)
@@ -201,6 +219,45 @@ def main() -> None:
                         "quarantine_only": True,
                         "canonical_mutation": False,
                         "commit_required": True,
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if args.command == "canon-commit-plan":
+        try:
+            payload = CanonCommitWorkbench().build_plan(project, claim_id=args.claim_id)
+        except (CanonCommitError, MaterializationError, ValueError) as exc:
+            parser.exit(2, f"storyos: Canon commit plan failed: {exc}\n")
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
+    if args.command == "canon-commit":
+        try:
+            commit_result, result = CanonCommitWorkbench().commit(
+                project,
+                claim_id=args.claim_id,
+                confirm_sha256=args.confirm_sha256,
+                actor=args.actor,
+                note=args.note,
+            )
+        except (CanonCommitError, MaterializationError, ValueError) as exc:
+            parser.exit(2, f"storyos: Canon commit failed: {exc}\n")
+        print(
+            json.dumps(
+                {
+                    "schema": "story.canon-commit-command-result.v1",
+                    "result": result,
+                    "commit": commit_result,
+                    "policy": {
+                        "explicit_candidate_sha256_confirmation": True,
+                        "canonical_create_only": True,
+                        "canonical_overwrite": False,
+                        "audit_precedes_canonical_mutation": True,
                     },
                 },
                 ensure_ascii=False,
