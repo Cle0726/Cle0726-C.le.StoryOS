@@ -2,6 +2,9 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   EntityView,
   ManuscriptHistoryView,
+  ManuscriptRecoveryClearResult,
+  ManuscriptRecoverySaveResult,
+  ManuscriptRecoveryView,
   ManuscriptRevisionView,
   ManuscriptSaveOutcome,
   ManuscriptView,
@@ -14,6 +17,9 @@ type WorkspaceAction =
   | 'manuscript'
   | 'manuscript-history'
   | 'manuscript-revision'
+  | 'manuscript-recovery'
+  | 'manuscript-recovery-save'
+  | 'manuscript-recovery-clear'
   | 'manuscript-save';
 
 interface WorkspaceRequest {
@@ -23,6 +29,8 @@ interface WorkspaceRequest {
   manuscriptPath?: string;
   expectedSha256?: string;
   revisionSha256?: string;
+  baseSha256?: string;
+  expectedDraftSha256?: string;
   content?: string;
   through?: number;
 }
@@ -60,6 +68,7 @@ function verifyPolicy(row: Record<string, unknown>, action: WorkspaceAction, sch
         policy.read_only !== true
         || policy.manuscript_mutation !== false
         || policy.history_mutation !== false
+        || policy.recovery_mutation === true
       ) {
         throw new Error('StoryOS Workspace 拒绝了非只读的正文冲突响应');
       }
@@ -69,8 +78,21 @@ function verifyPolicy(row: Record<string, unknown>, action: WorkspaceAction, sch
       policy.read_only !== false
       || policy.manuscript_mutation !== true
       || policy.history_mutation !== true
+      || policy.recovery_mutation === true
     ) {
       throw new Error('StoryOS Workspace 拒绝了超出正文/历史范围的写响应');
+    }
+    return;
+  }
+
+  if (action === 'manuscript-recovery-save' || action === 'manuscript-recovery-clear') {
+    if (
+      policy.read_only !== false
+      || policy.manuscript_mutation !== false
+      || policy.history_mutation !== false
+      || policy.recovery_mutation !== true
+    ) {
+      throw new Error('StoryOS Workspace 拒绝了超出 recovery 范围的写响应');
     }
     return;
   }
@@ -79,6 +101,7 @@ function verifyPolicy(row: Record<string, unknown>, action: WorkspaceAction, sch
     policy.read_only !== true
     || policy.manuscript_mutation === true
     || policy.history_mutation === true
+    || policy.recovery_mutation === true
   ) {
     throw new Error('StoryOS Workspace 拒绝了非只读响应');
   }
@@ -145,6 +168,49 @@ export function loadManuscriptRevision(
     manuscriptPath: nonEmpty(manuscriptPath, '正文路径'),
     revisionSha256: exactSha256(revisionSha256, '历史版本 SHA-256'),
   }, 'story.authoring-manuscript-revision.v1');
+}
+
+export function loadManuscriptRecovery(
+  project: string,
+  manuscriptPath: string,
+): Promise<ManuscriptRecoveryView> {
+  return callWorkspace<ManuscriptRecoveryView>({
+    action: 'manuscript-recovery',
+    project: nonEmpty(project, '项目路径'),
+    manuscriptPath: nonEmpty(manuscriptPath, '正文路径'),
+  }, 'story.authoring-manuscript-recovery.v1');
+}
+
+export function saveManuscriptRecovery(
+  project: string,
+  manuscriptPath: string,
+  baseSha256: string,
+  content: string,
+): Promise<ManuscriptRecoverySaveResult> {
+  if (content.includes('\0')) throw new Error('恢复草稿不能包含 NUL 字符');
+  if (new TextEncoder().encode(content).byteLength > MAX_MANUSCRIPT_BYTES) {
+    throw new Error('恢复草稿超过 16 MiB 桌面安全限制');
+  }
+  return callWorkspace<ManuscriptRecoverySaveResult>({
+    action: 'manuscript-recovery-save',
+    project: nonEmpty(project, '项目路径'),
+    manuscriptPath: nonEmpty(manuscriptPath, '正文路径'),
+    baseSha256: exactSha256(baseSha256, '恢复草稿基线 SHA-256'),
+    content,
+  }, 'story.authoring-manuscript-recovery-save.v1');
+}
+
+export function clearManuscriptRecovery(
+  project: string,
+  manuscriptPath: string,
+  expectedDraftSha256: string,
+): Promise<ManuscriptRecoveryClearResult> {
+  return callWorkspace<ManuscriptRecoveryClearResult>({
+    action: 'manuscript-recovery-clear',
+    project: nonEmpty(project, '项目路径'),
+    manuscriptPath: nonEmpty(manuscriptPath, '正文路径'),
+    expectedDraftSha256: exactSha256(expectedDraftSha256, '恢复草稿 SHA-256'),
+  }, 'story.authoring-manuscript-recovery-clear.v1');
 }
 
 export function saveManuscript(

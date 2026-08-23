@@ -174,12 +174,54 @@ export interface ManuscriptConflict {
   policy: ReadOnlyPolicy;
 }
 
+export interface ManuscriptRecoveryDraft {
+  base_sha256: string;
+  draft_sha256: string;
+  bytes: number;
+  characters: number;
+  lines: number;
+  captured_mtime_ns: number;
+  base_matches_current: boolean;
+  draft_matches_current: boolean;
+  recoverable: boolean;
+  content: string;
+}
+
+export interface ManuscriptRecoveryView {
+  schema: 'story.authoring-manuscript-recovery.v1';
+  project_id: string;
+  path: string;
+  current_sha256: string;
+  present: boolean;
+  recovery: ManuscriptRecoveryDraft | null;
+  policy: ReadOnlyPolicy;
+}
+
+export interface ManuscriptRecoverySaveResult {
+  schema: 'story.authoring-manuscript-recovery-save.v1';
+  project_id: string;
+  path: string;
+  recovery: ManuscriptRecoveryDraft;
+  policy: RecoveryWritePolicy;
+}
+
+export interface ManuscriptRecoveryClearResult {
+  schema: 'story.authoring-manuscript-recovery-clear.v1';
+  project_id: string;
+  path: string;
+  expected_draft_sha256: string;
+  cleared: boolean;
+  reason: 'cleared' | 'absent';
+  policy: RecoveryWritePolicy;
+}
+
 export type ManuscriptSaveOutcome = ManuscriptSaveResult | ManuscriptConflict;
 
 export interface ReadOnlyPolicy {
   read_only: true;
   manuscript_mutation?: false;
   history_mutation?: false;
+  recovery_mutation?: false;
   canonical_mutation: false;
   staging_mutation: false;
 }
@@ -188,6 +230,16 @@ export interface ManuscriptWritePolicy {
   read_only: false;
   manuscript_mutation: true;
   history_mutation: true;
+  recovery_mutation?: false;
+  canonical_mutation: false;
+  staging_mutation: false;
+}
+
+export interface RecoveryWritePolicy {
+  read_only: false;
+  manuscript_mutation: false;
+  history_mutation: false;
+  recovery_mutation: true;
   canonical_mutation: false;
   staging_mutation: false;
 }

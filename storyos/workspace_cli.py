@@ -5,6 +5,7 @@ import json
 import sys
 
 from storyos.manuscript_history import ManuscriptHistory, ManuscriptHistoryError
+from storyos.manuscript_recovery import ManuscriptRecovery, ManuscriptRecoveryError
 from storyos.manuscript_writer import (
     MAX_MANUSCRIPT_BYTES,
     ManuscriptConflictError,
@@ -93,6 +94,29 @@ def main() -> None:
     p_revision.add_argument("path", help="Project-relative manuscript path returned by snapshot")
     p_revision.add_argument("sha256", help="Revision SHA-256 returned by manuscript-history")
 
+    p_recovery = sub.add_parser(
+        "manuscript-recovery",
+        help="Read the isolated crash-recovery draft for one manuscript",
+    )
+    p_recovery.add_argument("project")
+    p_recovery.add_argument("path", help="Project-relative manuscript path returned by snapshot")
+
+    p_recovery_save = sub.add_parser(
+        "manuscript-recovery-save",
+        help="Autosave a draft into the isolated recovery area without touching the manuscript",
+    )
+    p_recovery_save.add_argument("project")
+    p_recovery_save.add_argument("path", help="Project-relative manuscript path returned by snapshot")
+    p_recovery_save.add_argument("base_sha256", help="Manuscript SHA-256 used as this draft's editing base")
+
+    p_recovery_clear = sub.add_parser(
+        "manuscript-recovery-clear",
+        help="Clear an inspected recovery draft using its exact draft SHA-256",
+    )
+    p_recovery_clear.add_argument("project")
+    p_recovery_clear.add_argument("path", help="Project-relative manuscript path returned by snapshot")
+    p_recovery_clear.add_argument("expected_draft_sha256", help="Recovery draft SHA-256 observed by the caller")
+
     p_save = sub.add_parser(
         "manuscript-save",
         help="Save one existing manuscript working copy with an exact SHA-256 compare-and-swap guard",
@@ -106,6 +130,7 @@ def main() -> None:
         project = StoryProject.open(args.project)
         workspace = AuthoringWorkspace()
         history = ManuscriptHistory()
+        recovery = ManuscriptRecovery()
         if args.command == "snapshot":
             payload = workspace.build_snapshot(project, through_sequence=args.through)
         elif args.command == "entity":
@@ -118,6 +143,21 @@ def main() -> None:
             payload = history.list_revisions(project, args.path)
         elif args.command == "manuscript-revision":
             payload = history.load_revision(project, args.path, args.sha256)
+        elif args.command == "manuscript-recovery":
+            payload = recovery.load(project, args.path)
+        elif args.command == "manuscript-recovery-save":
+            payload = recovery.save(
+                project,
+                args.path,
+                base_sha256=args.base_sha256,
+                content=_read_manuscript_stdin(),
+            )
+        elif args.command == "manuscript-recovery-clear":
+            payload = recovery.clear(
+                project,
+                args.path,
+                expected_draft_sha256=args.expected_draft_sha256,
+            )
         else:
             try:
                 payload = ManuscriptWriter().save(
@@ -139,6 +179,7 @@ def main() -> None:
     except (
         AuthoringWorkspaceError,
         ManuscriptHistoryError,
+        ManuscriptRecoveryError,
         ManuscriptWriteError,
         FileNotFoundError,
         OSError,
