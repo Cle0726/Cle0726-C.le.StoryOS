@@ -72,4 +72,4 @@ jobs:
           workspaces: desktop/src-tauri
 
       - name: Test hardened workspace bridge
-        run: cargo test --locked=false
+        run: cargo test
