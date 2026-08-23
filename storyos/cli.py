@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 from storyos.authority import CanonResolver
 from storyos.claims import ClaimStager
+from storyos.duanxian_import import DuanxianImportError, DuanxianV39Importer
 from storyos.knowledge import KnowledgeTimeline
 from storyos.project import StoryProject
 from storyos.state import StoryStateProjector
@@ -30,6 +31,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="storyos")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    p_import = sub.add_parser(
+        "import-duanxian-v39",
+        help="Import the Duanxian Season 1 v3.9 mother package into a new StoryOS project",
+    )
+    p_import.add_argument("source")
+    p_import.add_argument("target")
+    p_import.add_argument("--allow-dirty-source", action="store_true")
+
     p_validate = sub.add_parser("validate", help="Validate canonical and staging project files")
     p_validate.add_argument("project")
 
@@ -53,6 +62,18 @@ def main() -> None:
     p_claims.add_argument("--id", dest="claim_id", default=None)
 
     args = parser.parse_args()
+
+    if args.command == "import-duanxian-v39":
+        try:
+            report = DuanxianV39Importer(args.source).apply(
+                args.target,
+                allow_dirty_source=args.allow_dirty_source,
+            )
+        except DuanxianImportError as exc:
+            parser.exit(2, f"storyos: import failed: {exc}\n")
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
     project = StoryProject.open(args.project)
 
     if args.command == "validate":
