@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadSceneWorkspace } from './storyos';
 import type { SceneCharacterView, SceneWorkspaceView } from './types';
+import './scene.css';
 
 interface Props {
   project: string;
@@ -60,7 +61,7 @@ export default function SceneInspector({ project, manuscriptPath, through }: Pro
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
 
-  async function fetchView(nextPov: string, preserveAuthor = true) {
+  async function fetchView(nextPov: string) {
     const currentGeneration = ++generation.current;
     setLoading(true);
     setError(null);
@@ -72,7 +73,7 @@ export default function SceneInspector({ project, manuscriptPath, through }: Pro
         nextPov || null,
       );
       if (currentGeneration !== generation.current) return;
-      if (!nextPov || !preserveAuthor) setAuthorView(nextPov ? authorView : next);
+      if (!nextPov) setAuthorView(next);
       setView(next);
     } catch (cause) {
       if (currentGeneration !== generation.current) return;
