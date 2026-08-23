@@ -25,6 +25,7 @@ import type {
   ProjectSessionView,
   WorkspaceSnapshot,
 } from './types';
+import SceneInspector from './SceneInspector';
 
 type Selection =
   | { kind: 'manuscript'; value: ManuscriptSummary }
@@ -694,7 +695,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <div className="mark">S</div>
-          <div><strong>C.le. StoryOS</strong><span>Authoring Workspace · Session + History + Recovery</span></div>
+          <div><strong>C.le. StoryOS</strong><span>Authoring Workspace · Scene Context + History + Recovery</span></div>
         </div>
         <div className="project-controls">
           <span className="muted" title={projectPath}>{snapshot.project.name}</span>
@@ -823,9 +824,11 @@ export default function App() {
         </section>
 
         <aside className="panel inspector">
-          <div className="panel-heading"><div><span className="eyebrow">SAFETY / HISTORY</span><h2>检查器</h2></div></div>
+          <div className="panel-heading"><div><span className="eyebrow">CONTEXT / SAFETY</span><h2>检查器</h2></div></div>
           {manuscriptView ? (
             <>
+              <SceneInspector project={projectPath} manuscriptPath={manuscriptView.path} through={through} />
+              <div className="inspector-divider" />
               <div className="stats-row">
                 <Stat label="历史" value={manuscriptHistory?.revisions.length ?? 0} />
                 <Stat label="Recovery" value={recoveryView?.present ? 1 : 0} />
