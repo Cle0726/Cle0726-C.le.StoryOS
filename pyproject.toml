@@ -21,6 +21,7 @@ desktop = [
 
 [project.scripts]
 storyos = "storyos.cli:main"
+storyos-workspace = "storyos.workspace_cli:main"
 
 [tool.setuptools]
 packages = ["storyos"]
