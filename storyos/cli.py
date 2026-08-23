@@ -8,6 +8,7 @@ from storyos.authority import CanonResolver
 from storyos.claim_review import ClaimReviewError, ClaimReviewWorkbench, ReviewDecision
 from storyos.claims import ClaimStager
 from storyos.knowledge import KnowledgeTimeline
+from storyos.materialization import MaterializationError, MaterializationWorkbench
 from storyos.project import StoryProject
 from storyos.state import StoryStateProjector
 
@@ -67,6 +68,14 @@ def main() -> None:
     p_decide.add_argument("--value-json", default=None)
     p_decide.add_argument("--note", default="")
     p_decide.add_argument("--replace", action="store_true")
+
+    p_mat_plan = sub.add_parser("materialization-plan", help="Recheck reviewed claims for quarantine materialization")
+    p_mat_plan.add_argument("project")
+    p_mat_plan.add_argument("--claim", dest="claim_id", default=None)
+
+    p_mat_stage = sub.add_parser("materialization-stage", help="Write one ready claim to quarantine staging")
+    p_mat_stage.add_argument("project")
+    p_mat_stage.add_argument("claim_id")
 
     args = parser.parse_args()
     project = StoryProject.open(args.project)
@@ -161,6 +170,38 @@ def main() -> None:
                     "result": result,
                     "review": review.as_mapping(),
                     "policy": {"canonical_mutation": False, "materialization_required": True},
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if args.command == "materialization-plan":
+        try:
+            payload = MaterializationWorkbench().build_plan(project, claim_id=args.claim_id)
+        except (MaterializationError, ValueError) as exc:
+            parser.exit(2, f"storyos: materialization plan failed: {exc}\n")
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
+    if args.command == "materialization-stage":
+        try:
+            candidate, result = MaterializationWorkbench().stage(project, claim_id=args.claim_id)
+        except (MaterializationError, ValueError) as exc:
+            parser.exit(2, f"storyos: materialization staging failed: {exc}\n")
+        print(
+            json.dumps(
+                {
+                    "schema": "story.materialization-result.v1",
+                    "result": result,
+                    "candidate": candidate,
+                    "policy": {
+                        "quarantine_only": True,
+                        "canonical_mutation": False,
+                        "commit_required": True,
+                    },
                 },
                 ensure_ascii=False,
                 indent=2,
