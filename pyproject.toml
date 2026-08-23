@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cle-storyos"
+version = "1.0.0"
+description = "Deterministic long-form fiction state, Canon safety and desktop authoring workspace APIs"
+requires-python = ">=3.11"
+dependencies = [
+  "PyYAML>=6.0.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+]
+desktop = [
+  "pyinstaller==6.22.0",
+]
+
+[project.scripts]
+storyos = "storyos.cli:main"
+storyos-workspace = "storyos.workspace_cli:main"
+storyos-manuscript = "storyos.manuscript_working_copy_cli:main"
+
+[tool.setuptools]
+packages = ["storyos"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
