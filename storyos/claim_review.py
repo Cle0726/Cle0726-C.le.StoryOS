@@ -9,7 +9,9 @@ from typing import Any
 
 import yaml
 
+from storyos.atomic_io import AtomicWriteError, atomic_create_text, atomic_replace_text
 from storyos.claims import CandidateClaim, ClaimStager
+from storyos.file_lock import ProjectFileLockError, project_file_lock
 from storyos.ids import validate_id
 from storyos.project import StoryProject
 
@@ -182,8 +184,12 @@ class ClaimReviewWorkbench:
         directory = project.root / "staging" / "reviews"
         if not directory.exists():
             return {}
+        if directory.is_symlink():
+            raise ClaimReviewError("review directory cannot be a symlink")
         reviews: dict[str, ClaimReviewDecision] = {}
         for path in sorted(directory.rglob("*")):
+            if path.is_symlink():
+                raise ClaimReviewError(f"review path cannot be a symlink: {path}")
             if not path.is_file() or path.suffix.lower() not in {".yaml", ".yml", ".json"}:
                 continue
             raw = _load_data(path)
@@ -240,24 +246,45 @@ class ClaimReviewWorkbench:
             note=note,
         )
         review.validate()
-
         destination = project.root / "staging" / "reviews" / f"{claim.id}.yaml"
-        existed_before = destination.exists()
-        if existed_before:
-            existing_raw = _load_data(destination)
-            existing_data = dict(existing_raw)
-            existing_data.pop("schema", None)
-            existing_data.pop("policy", None)
-            existing = ClaimReviewDecision.from_mapping(existing_data)
-            if existing == review:
-                return review, "unchanged"
-            if not replace:
-                raise ClaimReviewError(
-                    f"review already exists with different content: {claim.id}; pass replace=True explicitly"
-                )
+        text = yaml.safe_dump(review.as_mapping(), allow_unicode=True, sort_keys=False, width=120)
 
-        _write_yaml(destination, review.as_mapping())
-        return review, "replaced" if existed_before else "created"
+        try:
+            with project_file_lock(project.root, "claim-review", resource=claim.id):
+                existed_before = destination.exists()
+                if existed_before:
+                    if destination.is_symlink():
+                        raise ClaimReviewError("review destination cannot be a symlink")
+                    existing_raw = _load_data(destination)
+                    existing_data = dict(existing_raw)
+                    existing_data.pop("schema", None)
+                    existing_data.pop("policy", None)
+                    existing = ClaimReviewDecision.from_mapping(existing_data)
+                    if existing == review:
+                        return review, "unchanged"
+                    if not replace:
+                        raise ClaimReviewError(
+                            f"review already exists with different content: {claim.id}; pass replace=True explicitly"
+                        )
+                    atomic_replace_text(project.root, destination, text)
+                    return review, "replaced"
+
+                try:
+                    atomic_create_text(project.root, destination, text)
+                except FileExistsError:
+                    existing_raw = _load_data(destination)
+                    existing_data = dict(existing_raw)
+                    existing_data.pop("schema", None)
+                    existing_data.pop("policy", None)
+                    existing = ClaimReviewDecision.from_mapping(existing_data)
+                    if existing == review:
+                        return review, "unchanged"
+                    raise ClaimReviewError(
+                        f"review was concurrently created with different content: {claim.id}"
+                    )
+                return review, "created"
+        except (AtomicWriteError, ProjectFileLockError) as exc:
+            raise ClaimReviewError(str(exc)) from exc
 
 
 def claim_fingerprint(claim: CandidateClaim) -> str:
@@ -316,12 +343,6 @@ def _load_data(path: Path) -> Any:
         if path.suffix.lower() == ".json":
             return json.load(fh)
         return yaml.safe_load(fh)
-
-
-def _write_yaml(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text = yaml.safe_dump(data, allow_unicode=True, sort_keys=False, width=120)
-    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def _hex_64(value: str) -> bool:
