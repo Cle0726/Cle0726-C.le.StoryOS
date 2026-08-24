@@ -58,6 +58,7 @@ class StoryProject:
             event = StoryEvent.from_mapping(data)
             _ensure_unique(event.id, seen_ids, "event")
             events.append(event)
+        _validate_episode_sequence_order(events)
         return events
 
     def load_entities(self) -> list[StoryEntity]:
@@ -127,11 +128,7 @@ class StoryProject:
 
 
 def _iter_data_files(project_root: Path, directory: Path) -> list[Path]:
-    """Return data files without ever following a project-internal symlink.
-
-    StoryOS project data is self-contained. A symlink anywhere under a canonical/staging
-    data root is therefore rejected rather than silently followed or ignored.
-    """
+    """Return data files without ever following a project-internal symlink."""
 
     project_root = project_root.resolve()
     if not directory.exists():
@@ -180,6 +177,42 @@ def _knowledge_fact_id(event: StoryEvent) -> str | None:
     if raw is None:
         raw = event.payload.get("fact")
     return None if raw is None else str(raw)
+
+
+def _validate_episode_sequence_order(events: Iterable[StoryEvent]) -> None:
+    """Require strictly increasing sequence ranges across positioned episodes.
+
+    Events inside one episode may share or interleave sequence values, but every later
+    (season, episode) must begin strictly after every sequence used by the previous
+    positioned episode. This prevents future-episode events from becoming visible when a
+    scene workspace computes an earlier episode's sequence boundary.
+    """
+
+    ranges: dict[tuple[int, int], tuple[int, int]] = {}
+    for event in events:
+        if event.at.season is None or event.at.episode is None:
+            continue
+        key = (event.at.season, event.at.episode)
+        current = ranges.get(key)
+        if current is None:
+            ranges[key] = (event.at.sequence, event.at.sequence)
+        else:
+            ranges[key] = (
+                min(current[0], event.at.sequence),
+                max(current[1], event.at.sequence),
+            )
+
+    previous_key: tuple[int, int] | None = None
+    previous_max: int | None = None
+    for key in sorted(ranges):
+        minimum, maximum = ranges[key]
+        if previous_max is not None and minimum <= previous_max:
+            raise ValueError(
+                "event sequence ranges overlap or move backward across episodes: "
+                f"{previous_key} ends at {previous_max}, {key} begins at {minimum}"
+            )
+        previous_key = key
+        previous_max = maximum
 
 
 def _ensure_unique(value: str, seen: set[str], kind: str) -> None:
