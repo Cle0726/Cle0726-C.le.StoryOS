@@ -91,6 +91,7 @@ class MaterializationWorkbench:
                 "commit_required": True,
                 "stale_reviews_rejected": True,
                 "conflicts_rechecked_at_plan_time": True,
+                "fact_validity_intervals_checked": True,
             },
         }
 
@@ -147,6 +148,7 @@ class MaterializationWorkbench:
                 claim.id, False, ("missing_normalized_target",), None, None, None, empty_check
             )
 
+        kind = "event" if review.decision is ReviewDecision.ACCEPT_EVENT_CANDIDATE else "fact"
         normalized_claim = CandidateClaim(
             id=claim.id,
             subject=claim.subject,
@@ -164,27 +166,48 @@ class MaterializationWorkbench:
         )
         normalized_claim.validate()
         result = self._checker.check(normalized_claim, canon_facts=canon_facts, events=events)
+        check_issues = [
+            {
+                "code": issue.code,
+                "severity": issue.severity,
+                "message": issue.message,
+                "existing_ref": issue.existing_ref,
+            }
+            for issue in result.issues
+        ]
+
+        interval_conflicts: list[CanonFact] = []
+        if kind == "fact":
+            interval_conflicts = _fact_interval_conflicts(
+                normalized_claim,
+                canon_facts,
+            )
+            if interval_conflicts:
+                check_issues.append(
+                    {
+                        "code": "canon_interval_conflict",
+                        "severity": "error",
+                        "message": (
+                            "fact validity interval overlaps equal-authority Canon with a different value"
+                        ),
+                        "existing_ref": ",".join(fact.id for fact in interval_conflicts),
+                    }
+                )
+
         check = {
-            "can_approve": result.can_approve,
+            "can_approve": result.can_approve and not interval_conflicts,
             "duplicate_of": result.duplicate_of,
-            "issues": [
-                {
-                    "code": issue.code,
-                    "severity": issue.severity,
-                    "message": issue.message,
-                    "existing_ref": issue.existing_ref,
-                }
-                for issue in result.issues
-            ],
+            "issues": check_issues,
         }
 
         reasons: list[str] = []
         if not result.can_approve:
             reasons.append("current_conflict")
+        if interval_conflicts:
+            reasons.append("future_interval_conflict")
         if result.duplicate_of is not None:
             reasons.append("already_canonical_duplicate")
 
-        kind = "event" if review.decision is ReviewDecision.ACCEPT_EVENT_CANDIDATE else "fact"
         identity = json.dumps(
             {
                 "claim_id": claim.id,
@@ -251,6 +274,7 @@ class MaterializationWorkbench:
             assumptions = [
                 "fact authority is inherited from the Candidate Claim proposed_authority",
                 "valid_from defaults to the original claim sequence and must be reviewed before canonical commit",
+                "equal-authority validity intervals are checked for future overlap before staging",
             ]
 
         candidate = {
@@ -269,6 +293,41 @@ class MaterializationWorkbench:
             candidate=candidate,
             check=check,
         )
+
+
+def _fact_interval_conflicts(
+    claim: CandidateClaim,
+    canon_facts,
+) -> list[CanonFact]:
+    """Find different equal-authority facts whose validity overlaps the new open interval."""
+
+    conflicts: list[CanonFact] = []
+    new_start = claim.at.sequence
+    for fact in canon_facts:
+        if (
+            fact.subject != claim.subject
+            or fact.predicate != claim.predicate
+            or fact.authority != claim.proposed_authority
+            or not fact.authority.is_mainline
+            or fact.value == claim.value
+        ):
+            continue
+        if _intervals_overlap(new_start, None, fact.valid_from, fact.valid_to):
+            conflicts.append(fact)
+    return sorted(conflicts, key=lambda fact: fact.id)
+
+
+def _intervals_overlap(
+    left_start: int | None,
+    left_end: int | None,
+    right_start: int | None,
+    right_end: int | None,
+) -> bool:
+    left_min = -1 if left_start is None else left_start
+    right_min = -1 if right_start is None else right_start
+    left_max = float("inf") if left_end is None else left_end
+    right_max = float("inf") if right_end is None else right_end
+    return left_min <= right_max and right_min <= left_max
 
 
 def quarantine_mapping_from_plan_item(item: dict[str, Any]) -> dict[str, Any]:
