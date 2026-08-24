@@ -10,6 +10,7 @@ import yaml
 
 from storyos.authority import CanonFact
 from storyos.events import StoryEvent
+from storyos.file_lock import ProjectFileLockError, project_file_lock
 from storyos.ids import stable_id, validate_id
 from storyos.materialization import (
     MaterializationError,
@@ -28,7 +29,9 @@ class CanonCommitWorkbench:
 
     The exact quarantine SHA-256 must be confirmed by the caller. An immutable
     authorization audit is created before Canon, then the current materialization
-    plan is rebuilt before the canonical file is created.
+    plan is rebuilt before the canonical file is created. The complete mutation
+    sequence is serialized by a project-wide OS-managed lock so direct Python API
+    callers receive the same transaction boundary as the CLI/desktop service.
     """
 
     audit_namespace = "canon-commit-v1"
@@ -72,6 +75,7 @@ class CanonCommitWorkbench:
                 "audit_immutable": True,
                 "current_materialization_revalidated": True,
                 "one_committed_target_per_claim": True,
+                "project_wide_mutation_lock": True,
             },
         }
 
@@ -91,6 +95,27 @@ class CanonCommitWorkbench:
         if not _is_sha256(confirm_sha256):
             raise CanonCommitError("confirm_sha256 must be a 64-character SHA-256")
 
+        try:
+            with project_file_lock(project.root, "canon-commit"):
+                return self._commit_locked(
+                    project,
+                    claim_id=claim_id,
+                    confirm_sha256=confirm_sha256,
+                    actor=actor,
+                    note=note,
+                )
+        except ProjectFileLockError as exc:
+            raise CanonCommitError(str(exc)) from exc
+
+    def _commit_locked(
+        self,
+        project: StoryProject,
+        *,
+        claim_id: str,
+        confirm_sha256: str,
+        actor: str,
+        note: str,
+    ) -> tuple[dict[str, Any], str]:
         item = self._single_plan_item(project, claim_id)
         if item.get("state") == "committed":
             if item.get("candidate_sha256") != confirm_sha256:
@@ -546,6 +571,7 @@ class CanonCommitWorkbench:
                 "canonical_create_only": True,
                 "canonical_overwrite": False,
                 "audit_precedes_canonical_mutation": True,
+                "project_wide_mutation_lock": True,
             },
         }
 
