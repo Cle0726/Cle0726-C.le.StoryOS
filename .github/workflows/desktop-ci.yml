@@ -47,6 +47,9 @@ jobs:
       - name: Typecheck desktop frontend
         run: npm run typecheck
 
+      - name: Test desktop interactions
+        run: npm run test:interaction
+
       - name: Build desktop frontend
         run: npm run build
 

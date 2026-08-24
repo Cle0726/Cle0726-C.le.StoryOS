@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
+    "test:interaction": "vitest run src/InteractionController.test.tsx",
     "icons": "tauri icon src-tauri/icons/storyos.svg",
     "sidecar": "python ../scripts/build_storyos_sidecar.py",
     "build": "npm run icons && tsc -b && vite build",
@@ -22,7 +23,9 @@
     "@types/react": "19.1.8",
     "@types/react-dom": "19.1.6",
     "@vitejs/plugin-react": "4.6.0",
+    "jsdom": "30.0.1",
     "typescript": "5.8.3",
-    "vite": "7.0.4"
+    "vite": "7.0.4",
+    "vitest": "4.1.11"
   }
 }
