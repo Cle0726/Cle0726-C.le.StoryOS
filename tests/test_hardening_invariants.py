@@ -192,3 +192,22 @@ def test_reference_validator_checks_legacy_fact_alias(tmp_path):
 
     errors = StoryProject.open(project.root).validate_references()
     assert any(missing_fact in error for error in errors)
+
+
+def test_project_rejects_sequence_overlap_between_episodes(tmp_path):
+    project = _project(tmp_path / "project")
+    _write_yaml(
+        project.root / "events" / "future-episode-low-sequence.yaml",
+        {
+            "schema": "story.event.v1",
+            "id": stable_id("event", PROJECT_ID, "future-episode-low-sequence"),
+            "subject": CHAR,
+            "type": "location.set",
+            "at": {"sequence": 20, "season": 1, "episode": 2, "scene": 1},
+            "payload": {"value": "future-room"},
+            "source": {"kind": "test"},
+        },
+    )
+
+    with pytest.raises(ValueError, match="overlap or move backward"):
+        StoryProject.open(project.root).load_events()
