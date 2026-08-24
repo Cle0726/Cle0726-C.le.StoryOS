@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "C.le. StoryOS",
+  "productName": "StoryOS",
   "version": "1.0.0",
   "identifier": "com.cle0726.storyos",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "C.le. StoryOS",
+        "title": "StoryOS",
         "width": 1440,
         "height": 900,
         "minWidth": 960,
@@ -27,6 +27,13 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }
