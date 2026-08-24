@@ -37,6 +37,29 @@ function valueText(value: unknown): string {
   }
 }
 
+function predicateLabel(value: string): string {
+  const labels: Record<string, string> = {
+    location: '位置',
+    'identity.role': '身份 / 角色',
+    'identity.real_name': '真实姓名',
+    'goal.destination': '目标地点',
+    'injury.left_hand': '左手伤势',
+    'relationship.status': '关系状态',
+    'plot.status': '伏笔状态',
+  };
+  return labels[value] ?? value.replaceAll('_', ' ').replaceAll('.', ' · ');
+}
+
+function authorityLabel(value: string): string {
+  const labels: Record<string, string> = {
+    locked: '锁定 Canon',
+    current: '当前 Canon',
+    draft: '草案',
+    alternate: '非主线',
+  };
+  return labels[value] ?? value;
+}
+
 function decisionLabel(value: ClaimDecision | undefined): string {
   switch (value) {
     case 'accept_event_candidate': return '接受为事件候选';
@@ -193,7 +216,7 @@ export default function GovernanceWorkbench({ project, onChanged }: Props) {
         <div>
           <span className="eyebrow">STORY GOVERNANCE</span>
           <h1>事实审核与 Canon</h1>
-          <p>AI/导入结果先作为 Claim。只有你明确审核、生成隔离候选并再次确认 SHA 后，才允许进入 Canon。</p>
+          <p>AI 或导入得到的信息先作为 Claim。只有经过你的审核、隔离和最终确认，才允许成为正式 Canon。</p>
         </div>
         <button onClick={() => void refresh()} disabled={loading}>{loading ? '检查中…' : '重新检查'}</button>
       </div>
@@ -233,15 +256,15 @@ export default function GovernanceWorkbench({ project, onChanged }: Props) {
               <div className="governance-card-head">
                 <div>
                   <span className="governance-subject">{item.subject_name ?? item.claim.subject}</span>
-                  <h3>{item.claim.predicate}</h3>
+                  <h3 title={item.claim.predicate}>{predicateLabel(item.claim.predicate)}</h3>
                 </div>
-                <div className="governance-confidence">{Math.round(item.claim.confidence * 100)}%</div>
+                <div className="governance-confidence" title="提取/推断置信度">{Math.round(item.claim.confidence * 100)}%</div>
               </div>
 
               <div className="governance-value">{valueText(item.claim.value)}</div>
               <div className="governance-meta">
-                <span>sequence {item.claim.at.sequence}</span>
-                <span>{item.claim.proposed_authority}</span>
+                <span>故事时间点 {item.claim.at.sequence}</span>
+                <span>{authorityLabel(item.claim.proposed_authority)}</span>
                 <span>{decisionLabel(reviewDecision)}</span>
               </div>
               {renderPipeline(item, mat, canon)}
@@ -287,9 +310,9 @@ export default function GovernanceWorkbench({ project, onChanged }: Props) {
                   <div>
                     <span className="eyebrow">EXPLICIT CANON COMMIT</span>
                     <strong>最后确认</strong>
-                    <p>这一步会创建 Canon 文件。候选 SHA：<code>{canon.candidate_sha256}</code></p>
+                    <p>这一步会创建正式 Canon 文件。候选指纹：<code>{canon.candidate_sha256}</code></p>
                   </div>
-                  <label><span>提交者</span><input value={actor} onChange={(event) => setActor(event.target.value)} /></label>
+                  <label><span>确认人</span><input value={actor} onChange={(event) => setActor(event.target.value)} /></label>
                   <label><span>备注（可选）</span><input value={commitNote} onChange={(event) => setCommitNote(event.target.value)} /></label>
                   <div className="canon-confirm-actions">
                     <button onClick={() => setConfirmClaim(null)}>取消</button>
