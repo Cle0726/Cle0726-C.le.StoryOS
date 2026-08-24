@@ -11,15 +11,44 @@ class ProjectFileLockError(RuntimeError):
     """Raised when a StoryOS cross-process file lock cannot be acquired safely."""
 
 
+def _ensure_safe_directory(project_root: Path, path: Path) -> None:
+    if path.exists():
+        if path.is_symlink():
+            raise ProjectFileLockError(f"lock path cannot be a symlink: {path}")
+        if not path.is_dir():
+            raise ProjectFileLockError(f"lock path is not a directory: {path}")
+    else:
+        try:
+            path.mkdir()
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            raise ProjectFileLockError(f"failed to create StoryOS lock directory: {exc}") from exc
+        if path.is_symlink() or not path.is_dir():
+            raise ProjectFileLockError(f"lock path is not a safe directory: {path}")
+
+    try:
+        path.resolve().relative_to(project_root)
+    except ValueError as exc:
+        raise ProjectFileLockError(f"lock path escapes project root: {path}") from exc
+
+
 def _lock_path(project_root: Path, namespace: str, resource: str | None) -> Path:
     if not namespace or any(ch in namespace for ch in "/\\\0\r\n"):
         raise ProjectFileLockError("invalid lock namespace")
+
+    project_root = project_root.resolve()
     key = "project" if resource is None else hashlib.sha256(resource.encode("utf-8")).hexdigest()
-    root = project_root.resolve() / ".storyos" / "locks" / namespace
-    root.mkdir(parents=True, exist_ok=True)
-    if root.is_symlink():
-        raise ProjectFileLockError("lock root cannot be a symlink")
-    return root / f"{key}.lock"
+    storyos_dir = project_root / ".storyos"
+    locks_dir = storyos_dir / "locks"
+    namespace_dir = locks_dir / namespace
+
+    # Create/check each component individually so a pre-existing .storyos or locks
+    # directory symlink cannot redirect StoryOS lock ownership outside the project.
+    for directory in (storyos_dir, locks_dir, namespace_dir):
+        _ensure_safe_directory(project_root, directory)
+
+    return namespace_dir / f"{key}.lock"
 
 
 def _acquire(handle) -> None:
