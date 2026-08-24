@@ -1,0 +1,150 @@
+/* Compact-window overrides for StoryOS desktop.
+   Keep essential navigation reachable even when the Tauri window is narrowed. */
+
+@media (max-width: 840px) {
+  html,
+  body,
+  #root {
+    min-width: 680px;
+  }
+
+  .product-topbar {
+    grid-template-columns: minmax(176px, 1fr) auto;
+    gap: 10px;
+    padding-inline: 12px;
+  }
+
+  .product-topbar .brand span,
+  .product-topbar .readonly-badge {
+    display: none;
+  }
+
+  .product-top-actions {
+    gap: 3px;
+    padding: 3px;
+  }
+
+  .product-top-actions button,
+  .product-top-actions button:not(.active-soft) {
+    display: block;
+    min-height: 30px;
+    padding-inline: 8px;
+    font-size: 10px;
+  }
+
+  .product-workspace-grid {
+    grid-template-columns: 194px minmax(470px, 1fr);
+    gap: 8px;
+    padding: 8px 8px 9px;
+  }
+
+  .product-navigator {
+    padding-inline: 9px;
+  }
+
+  .navigator-heading h2 {
+    max-width: 124px;
+  }
+
+  .product-nav-list .nav-item {
+    grid-template-columns: 35px minmax(0, 1fr);
+    padding-inline: 6px;
+  }
+
+  .product-nav-list .entity-dot {
+    margin-left: 9px;
+  }
+
+  .product-nav-tabs button {
+    font-size: 9px;
+  }
+
+  .launcher-hero {
+    min-height: 300px;
+    padding: 34px;
+  }
+
+  .launcher-hero > * {
+    max-width: 100%;
+  }
+
+  .launcher-hero::before {
+    right: -280px;
+    opacity: 0.24;
+  }
+
+  .launcher-hero::after {
+    opacity: 0.45;
+  }
+
+  .launcher-hero h1 {
+    max-width: 560px;
+    font-size: clamp(38px, 7vw, 56px);
+  }
+
+  .launcher-hero p {
+    max-width: 560px;
+  }
+
+  .recent-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .product-editor-document {
+    padding-inline: 22px;
+  }
+
+  .product-editor-heading h1 {
+    font-size: 31px;
+  }
+
+  .manuscript-editor {
+    padding: 30px 32px 56px;
+    font-size: 16.5px;
+  }
+
+  .entity-detail,
+  .governance-workbench {
+    padding-inline: 24px;
+  }
+
+  .entity-two-column,
+  .governance-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .governance-hero,
+  .entity-hero {
+    padding: 24px;
+  }
+}
+
+@media (max-height: 650px) {
+  .product-shell {
+    grid-template-rows: 56px auto minmax(0, 1fr);
+  }
+
+  .product-topbar {
+    min-height: 56px;
+  }
+
+  .product-workspace-grid {
+    padding-top: 8px;
+  }
+
+  .product-editor-document {
+    padding-top: 18px;
+  }
+
+  .product-editor-heading h1 {
+    font-size: 30px;
+  }
+
+  .writing-shortcuts {
+    display: none;
+  }
+
+  .manuscript-editor {
+    min-height: 50vh;
+  }
+}

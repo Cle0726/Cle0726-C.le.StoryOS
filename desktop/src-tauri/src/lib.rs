@@ -1,4 +1,5 @@
 mod bridge;
+mod product;
 mod scene;
 mod session;
 
@@ -49,6 +50,7 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             bridge::storyos_workspace,
+            product::storyos_product,
             scene::storyos_scene_workspace,
             session::storyos_project_session,
             session::pick_project_directory,
