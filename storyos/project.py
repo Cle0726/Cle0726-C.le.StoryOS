@@ -12,6 +12,8 @@ from storyos.claims import CandidateClaim
 from storyos.entities import StoryEntity
 from storyos.events import StoryEvent
 
+_ALLOWED_DATA_SUFFIXES = {".yaml", ".yml", ".json"}
+
 
 @dataclass(frozen=True)
 class StoryProject:
@@ -22,8 +24,11 @@ class StoryProject:
     def open(cls, root: str | Path) -> "StoryProject":
         root_path = Path(root).resolve()
         manifest_path = root_path / "storyos.yaml"
+        if manifest_path.is_symlink():
+            raise ValueError("project manifest cannot be a symlink")
         if not manifest_path.is_file():
             raise FileNotFoundError(f"missing project manifest: {manifest_path}")
+        _ensure_contained(root_path, manifest_path)
         with manifest_path.open("r", encoding="utf-8") as fh:
             manifest = yaml.safe_load(fh) or {}
         if manifest.get("schema") != "story.project.v1":
@@ -31,16 +36,16 @@ class StoryProject:
         return cls(root=root_path, manifest=manifest)
 
     def iter_event_files(self) -> Iterable[Path]:
-        return _iter_data_files(self.root / "events")
+        return _iter_data_files(self.root, self.root / "events")
 
     def iter_entity_files(self) -> Iterable[Path]:
-        return _iter_data_files(self.root / "entities")
+        return _iter_data_files(self.root, self.root / "entities")
 
     def iter_canon_files(self) -> Iterable[Path]:
-        return _iter_data_files(self.root / "canon")
+        return _iter_data_files(self.root, self.root / "canon")
 
     def iter_claim_files(self) -> Iterable[Path]:
-        return _iter_data_files(self.root / "staging" / "claims")
+        return _iter_data_files(self.root, self.root / "staging" / "claims")
 
     def load_events(self) -> list[StoryEvent]:
         events: list[StoryEvent] = []
@@ -53,6 +58,7 @@ class StoryProject:
             event = StoryEvent.from_mapping(data)
             _ensure_unique(event.id, seen_ids, "event")
             events.append(event)
+        _validate_episode_sequence_order(events)
         return events
 
     def load_entities(self) -> list[StoryEntity]:
@@ -99,18 +105,19 @@ class StoryProject:
         entity_ids = {entity.id for entity in entities}
         facts = self.load_canon_facts()
         fact_ids = {fact.id for fact in facts}
+        events = self.load_events()
         errors: list[str] = []
 
         for fact in facts:
             if fact.subject not in entity_ids:
                 errors.append(f"canon fact {fact.id} references missing subject {fact.subject}")
 
-        for event in self.load_events():
+        for event in events:
             if event.subject not in entity_ids:
                 errors.append(f"event {event.id} references missing subject {event.subject}")
             if event.type in {"knowledge.gained", "knowledge.lost"}:
-                fact_id = event.payload.get("fact_id")
-                if fact_id is not None and str(fact_id) not in fact_ids:
+                fact_id = _knowledge_fact_id(event)
+                if fact_id is not None and fact_id not in fact_ids:
                     errors.append(f"event {event.id} references missing canon fact {fact_id}")
 
         for claim in self.load_claims():
@@ -120,13 +127,39 @@ class StoryProject:
         return errors
 
 
-def _iter_data_files(directory: Path) -> list[Path]:
+def _iter_data_files(project_root: Path, directory: Path) -> list[Path]:
+    """Return data files without ever following a project-internal symlink."""
+
+    project_root = project_root.resolve()
     if not directory.exists():
         return []
-    return sorted(
-        p for p in directory.rglob("*")
-        if p.is_file() and p.suffix.lower() in {".yaml", ".yml", ".json"}
-    )
+    if directory.is_symlink():
+        raise ValueError(f"project data directory cannot be a symlink: {directory}")
+    if not directory.is_dir():
+        raise ValueError(f"project data root is not a directory: {directory}")
+    _ensure_contained(project_root, directory)
+
+    result: list[Path] = []
+
+    def visit(current: Path) -> None:
+        for child in sorted(current.iterdir(), key=lambda item: item.name):
+            if child.is_symlink():
+                raise ValueError(f"project data path cannot contain symlinks: {child}")
+            _ensure_contained(project_root, child)
+            if child.is_dir():
+                visit(child)
+            elif child.is_file() and child.suffix.lower() in _ALLOWED_DATA_SUFFIXES:
+                result.append(child)
+
+    visit(directory)
+    return result
+
+
+def _ensure_contained(project_root: Path, path: Path) -> None:
+    try:
+        path.resolve().relative_to(project_root)
+    except ValueError as exc:
+        raise ValueError(f"project data path escapes project root: {path}") from exc
 
 
 def _iter_records(paths: Iterable[Path]):
@@ -137,6 +170,49 @@ def _iter_records(paths: Iterable[Path]):
             if not isinstance(raw, dict):
                 raise ValueError(f"record must be an object: {path}")
             yield path, raw
+
+
+def _knowledge_fact_id(event: StoryEvent) -> str | None:
+    raw = event.payload.get("fact_id")
+    if raw is None:
+        raw = event.payload.get("fact")
+    return None if raw is None else str(raw)
+
+
+def _validate_episode_sequence_order(events: Iterable[StoryEvent]) -> None:
+    """Require strictly increasing sequence ranges across positioned episodes.
+
+    Events inside one episode may share or interleave sequence values, but every later
+    (season, episode) must begin strictly after every sequence used by the previous
+    positioned episode. This prevents future-episode events from becoming visible when a
+    scene workspace computes an earlier episode's sequence boundary.
+    """
+
+    ranges: dict[tuple[int, int], tuple[int, int]] = {}
+    for event in events:
+        if event.at.season is None or event.at.episode is None:
+            continue
+        key = (event.at.season, event.at.episode)
+        current = ranges.get(key)
+        if current is None:
+            ranges[key] = (event.at.sequence, event.at.sequence)
+        else:
+            ranges[key] = (
+                min(current[0], event.at.sequence),
+                max(current[1], event.at.sequence),
+            )
+
+    previous_key: tuple[int, int] | None = None
+    previous_max: int | None = None
+    for key in sorted(ranges):
+        minimum, maximum = ranges[key]
+        if previous_max is not None and minimum <= previous_max:
+            raise ValueError(
+                "event sequence ranges overlap or move backward across episodes: "
+                f"{previous_key} ends at {previous_max}, {key} begins at {minimum}"
+            )
+        previous_key = key
+        previous_max = maximum
 
 
 def _ensure_unique(value: str, seen: set[str], kind: str) -> None:

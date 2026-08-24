@@ -7,7 +7,9 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "icons": "tauri icon src-tauri/icons/storyos.svg",
+    "sidecar": "python ../scripts/build_storyos_sidecar.py",
     "build": "npm run icons && tsc -b && vite build",
+    "build:tauri": "npm run sidecar && npm run build",
     "tauri": "tauri"
   },
   "dependencies": {

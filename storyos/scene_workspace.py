@@ -6,11 +6,10 @@ from typing import Any
 from storyos.authority import CanonFact, CanonResolver
 from storyos.canon_commit import CanonCommitWorkbench
 from storyos.claim_review import ClaimReviewWorkbench
-from storyos.knowledge import KnowledgeTimeline
 from storyos.materialization import MaterializationWorkbench
 from storyos.project import StoryProject
 from storyos.state import StoryStateProjector
-from storyos.workspace import AuthoringWorkspace, AuthoringWorkspaceError
+from storyos.workspace import AuthoringWorkspace
 
 
 class SceneWorkspaceError(RuntimeError):
@@ -20,14 +19,9 @@ class SceneWorkspaceError(RuntimeError):
 class SceneWorkspace:
     """Deterministic, read-only authoring view anchored to one manuscript.
 
-    The service intentionally does not expose manuscript content. The editor loads the
-    working copy through the existing manuscript read protocol, while this view supplies
-    point-in-time story context and navigation metadata.
-
-    When ``pov_entity_id`` is supplied the response becomes conservative POV mode:
-    only the POV character's projected state is exposed, knowledge is limited to known
-    Canon facts that have passed the reveal boundary, and global Canon conflicts / plot
-    threads are withheld.
+    When ``pov_entity_id`` is supplied, output is conservative: only the POV
+    character's projected state is exposed and Canon-backed knowledge is visible only
+    when the fact is mainline, active at the selected sequence, and revealed by then.
     """
 
     def __init__(self) -> None:
@@ -48,18 +42,13 @@ class SceneWorkspace:
     ) -> dict[str, Any]:
         manuscripts = self._workspace.list_manuscripts(project)
         document = self._workspace.load_manuscript(project, manuscript_path)
-        current = next(
-            (item for item in manuscripts if item["path"] == document["path"]),
-            None,
-        )
+        current = next((item for item in manuscripts if item["path"] == document["path"]), None)
         if current is None:
             raise SceneWorkspaceError(
                 f"manuscript is not present in deterministic listing: {manuscript_path}"
             )
 
-        entities = sorted(
-            project.load_entities(), key=lambda item: (item.kind, item.name, item.id)
-        )
+        entities = sorted(project.load_entities(), key=lambda item: (item.kind, item.name, item.id))
         entity_by_id = {entity.id: entity for entity in entities}
         characters = [entity for entity in entities if entity.kind == "character"]
         plots = [entity for entity in entities if entity.kind == "plot"]
@@ -83,20 +72,13 @@ class SceneWorkspace:
             episode=current["episode"],
             requested=through_sequence,
         )
-        visible_events = (
-            []
-            if effective is None
-            else [event for event in events if event.at.sequence <= effective]
-        )
-        states = (
-            {}
-            if effective is None
-            else self._state.project(events, through_sequence=effective)
-        )
+        visible_events = [] if effective is None else [
+            event for event in events if event.at.sequence <= effective
+        ]
+        states = {} if effective is None else self._state.project(events, through_sequence=effective)
 
         episode_events = [
-            event
-            for event in visible_events
+            event for event in visible_events
             if _same_episode(event, current["season"], current["episode"])
         ]
         episode_subjects = {event.subject for event in episode_events}
@@ -106,36 +88,21 @@ class SceneWorkspace:
             latest_event_by_subject[event.subject] = event.at.sequence
             event_counts[event.subject] += 1
 
-        knowledge = KnowledgeTimeline(events)
         facts_by_id = {fact.id: fact for fact in facts}
-
-        if pov is None:
-            character_rows = [
-                _character_row(
-                    entity,
-                    state=states.get(entity.id),
-                    facts_by_id=facts_by_id,
-                    through_sequence=effective,
-                    scene_relevant=entity.id in episode_subjects,
-                    latest_event_sequence=latest_event_by_subject.get(entity.id),
-                    event_count=event_counts.get(entity.id, 0),
-                    pov_mode=False,
-                )
-                for entity in characters
-            ]
-        else:
-            character_rows = [
-                _character_row(
-                    pov,
-                    state=states.get(pov.id),
-                    facts_by_id=facts_by_id,
-                    through_sequence=effective,
-                    scene_relevant=pov.id in episode_subjects,
-                    latest_event_sequence=latest_event_by_subject.get(pov.id),
-                    event_count=event_counts.get(pov.id, 0),
-                    pov_mode=True,
-                )
-            ]
+        selected_characters = characters if pov is None else [pov]
+        character_rows = [
+            _character_row(
+                entity,
+                state=states.get(entity.id),
+                facts_by_id=facts_by_id,
+                through_sequence=effective,
+                scene_relevant=entity.id in episode_subjects,
+                latest_event_sequence=latest_event_by_subject.get(entity.id),
+                event_count=event_counts.get(entity.id, 0),
+                pov_mode=pov is not None,
+            )
+            for entity in selected_characters
+        ]
 
         if pov is None:
             canon_conflicts = _canon_conflicts(
@@ -144,11 +111,7 @@ class SceneWorkspace:
                 through_sequence=effective,
                 entity_by_id=entity_by_id,
             )
-            plot_threads = _plot_threads(
-                plots,
-                visible_events,
-                episode_subjects=episode_subjects,
-            )
+            plot_threads = _plot_threads(plots, visible_events, episode_subjects=episode_subjects)
             workflow = self._workflow_attention(project)
         else:
             canon_conflicts = []
@@ -161,9 +124,7 @@ class SceneWorkspace:
                 "id": event.id,
                 "subject": event.subject,
                 "subject_name": (
-                    entity_by_id[event.subject].name
-                    if event.subject in entity_by_id
-                    else event.subject
+                    entity_by_id[event.subject].name if event.subject in entity_by_id else event.subject
                 ),
                 "type": event.type,
                 "sequence": event.at.sequence,
@@ -177,27 +138,16 @@ class SceneWorkspace:
             "schema": "story.authoring-scene-workspace.v1",
             "project_id": str(project.manifest.get("id") or ""),
             "mode": "author" if pov is None else "pov",
-            "pov": (
-                None
-                if pov is None
-                else {
-                    "id": pov.id,
-                    "name": pov.name,
-                    "aliases": list(pov.aliases),
-                }
-            ),
+            "pov": None if pov is None else {
+                "id": pov.id,
+                "name": pov.name,
+                "aliases": list(pov.aliases),
+            },
             "manuscript": {
                 key: current[key]
                 for key in (
-                    "path",
-                    "name",
-                    "title",
-                    "season",
-                    "episode",
-                    "bytes",
-                    "characters",
-                    "lines",
-                    "sha256",
+                    "path", "name", "title", "season", "episode",
+                    "bytes", "characters", "lines", "sha256",
                 )
             },
             "timeline": {
@@ -205,8 +155,10 @@ class SceneWorkspace:
                 "effective_through_sequence": effective,
                 "boundary_source": boundary_source,
                 "episode_events": len(episode_event_rows),
-                "visible_events": len(visible_events) if pov is None else sum(
-                    1 for event in visible_events if event.subject == pov.id
+                "visible_events": (
+                    len(visible_events)
+                    if pov is None
+                    else sum(1 for event in visible_events if event.subject == pov.id)
                 ),
             },
             "navigation": navigation,
@@ -235,9 +187,6 @@ class SceneWorkspace:
                 "manuscript_content_included": False,
             },
         }
-
-        # Defense in depth: a scene response must never accidentally inherit the
-        # manuscript working-copy content loaded only for path validation/metadata.
         if "content" in payload["manuscript"]:
             raise SceneWorkspaceError("scene workspace must not expose manuscript content")
         return payload
@@ -306,6 +255,8 @@ def _character_row(
     knowledge_tokens = [] if state is None else sorted(state.knowledge)
     knowledge_rows: list[dict[str, Any]] = []
     hidden_by_reveal = 0
+    hidden_inactive = 0
+    hidden_nonmainline = 0
     hidden_ungoverned = 0
 
     for token in knowledge_tokens:
@@ -316,9 +267,18 @@ def _character_row(
             else:
                 knowledge_rows.append({"id": token, "kind": "knowledge_token"})
             continue
-        if pov_mode and not fact.revealed_at(through_sequence):
-            hidden_by_reveal += 1
-            continue
+
+        if pov_mode:
+            if not fact.authority.is_mainline:
+                hidden_nonmainline += 1
+                continue
+            if not fact.active_at(through_sequence):
+                hidden_inactive += 1
+                continue
+            if not fact.revealed_at(through_sequence):
+                hidden_by_reveal += 1
+                continue
+
         knowledge_rows.append(
             {
                 "id": fact.id,
@@ -343,6 +303,8 @@ def _character_row(
             "visible": knowledge_rows,
             "visible_count": len(knowledge_rows),
             "hidden_by_reveal": hidden_by_reveal,
+            "hidden_inactive": hidden_inactive,
+            "hidden_nonmainline": hidden_nonmainline,
             "hidden_ungoverned": hidden_ungoverned,
         },
         "latest_event_sequence": latest_event_sequence,
@@ -360,9 +322,8 @@ def _canon_conflicts(
     through_sequence: int | None,
     entity_by_id: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    keys = sorted({(fact.subject, fact.predicate) for fact in facts})
     rows: list[dict[str, Any]] = []
-    for subject, predicate in keys:
+    for subject, predicate in sorted({(fact.subject, fact.predicate) for fact in facts}):
         resolution = resolver.resolve(
             facts,
             subject=subject,
@@ -374,9 +335,7 @@ def _canon_conflicts(
         rows.append(
             {
                 "subject": subject,
-                "subject_name": (
-                    entity_by_id[subject].name if subject in entity_by_id else subject
-                ),
+                "subject_name": entity_by_id[subject].name if subject in entity_by_id else subject,
                 "predicate": predicate,
                 "facts": [
                     {
@@ -399,12 +358,7 @@ def _plot_threads(plots, visible_events, *, episode_subjects: set[str]) -> list[
         raw = event.payload.get("plot_id")
         if raw is None:
             continue
-        plot_id = str(raw)
-        status[plot_id] = (
-            event.type == "plot.resolved",
-            event.at.sequence,
-            event.id,
-        )
+        status[str(raw)] = (event.type == "plot.resolved", event.at.sequence, event.id)
 
     rows: list[dict[str, Any]] = []
     for plot in plots:
@@ -427,20 +381,14 @@ def _plot_threads(plots, visible_events, *, episode_subjects: set[str]) -> list[
 
 
 def _navigation(manuscripts: list[dict[str, Any]], current_path: str) -> dict[str, Any]:
-    index = next(
-        (index for index, item in enumerate(manuscripts) if item["path"] == current_path),
-        None,
-    )
+    index = next((index for index, item in enumerate(manuscripts) if item["path"] == current_path), None)
     if index is None:
         raise SceneWorkspaceError(f"unknown manuscript in navigation: {current_path}")
 
     def compact(item: dict[str, Any] | None) -> dict[str, Any] | None:
         if item is None:
             return None
-        return {
-            key: item[key]
-            for key in ("path", "title", "season", "episode", "sha256")
-        }
+        return {key: item[key] for key in ("path", "title", "season", "episode", "sha256")}
 
     return {
         "index": index,
@@ -468,11 +416,7 @@ def _actions_available(
             "kind": "read_navigation",
             "enabled": navigation["next"] is not None,
         },
-        {
-            "id": "inspect_character",
-            "kind": "read_navigation",
-            "enabled": has_characters,
-        },
+        {"id": "inspect_character", "kind": "read_navigation", "enabled": has_characters},
         {
             "id": "switch_context_mode",
             "kind": "read_navigation",
@@ -481,11 +425,5 @@ def _actions_available(
         },
     ]
     if has_workflow and not pov_mode:
-        rows.append(
-            {
-                "id": "inspect_workflow_queue",
-                "kind": "read_navigation",
-                "enabled": True,
-            }
-        )
+        rows.append({"id": "inspect_workflow_queue", "kind": "read_navigation", "enabled": True})
     return rows

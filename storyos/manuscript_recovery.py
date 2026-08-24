@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from storyos.file_lock import ProjectFileLockError, project_file_lock
 from storyos.project import StoryProject
 from storyos.workspace import AuthoringWorkspace, AuthoringWorkspaceError
 
@@ -19,13 +20,7 @@ class ManuscriptRecoveryError(RuntimeError):
 
 
 class ManuscriptRecovery:
-    """Single-slot crash recovery for one workspace-validated manuscript path.
-
-    Recovery drafts live under ``.storyos/manuscript-recovery`` and never mutate the
-    manuscript working copy, immutable manuscript history, Canon, or staging. The slot
-    records the manuscript SHA observed by the editor plus a SHA of the logical UTF-8
-    draft content. Loading a recovery draft never applies it automatically.
-    """
+    """Single-slot crash recovery for one workspace-validated manuscript path."""
 
     def __init__(self) -> None:
         self._workspace = AuthoringWorkspace()
@@ -58,6 +53,31 @@ class ManuscriptRecovery:
 
         loaded = self._load_manuscript(project, relative_path)
         normalized_path = str(loaded["path"])
+        try:
+            with project_file_lock(project.root, "manuscript", resource=normalized_path):
+                # Re-read the manuscript while holding the same per-manuscript lock used
+                # by official saves, so recovery metadata is anchored to a coherent disk state.
+                current = self._load_manuscript(project, normalized_path)
+                return self._save_locked(
+                    project,
+                    current,
+                    normalized_path,
+                    base,
+                    content,
+                    raw_content,
+                )
+        except ProjectFileLockError as exc:
+            raise ManuscriptRecoveryError(str(exc)) from exc
+
+    def _save_locked(
+        self,
+        project: StoryProject,
+        current: dict[str, Any],
+        normalized_path: str,
+        base: str,
+        content: str,
+        raw_content: bytes,
+    ) -> dict[str, Any]:
         record_path = self._record_path(project, normalized_path, create=True)
         draft_sha = hashlib.sha256(raw_content).hexdigest()
         record = {
@@ -68,27 +88,16 @@ class ManuscriptRecovery:
             "content": content,
         }
         encoded = (
-            json.dumps(
-                record,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-            + "\n"
+            json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
         ).encode("utf-8")
         if len(encoded) > MAX_RECOVERY_RECORD_BYTES:
             raise ManuscriptRecoveryError("recovery record exceeded the storage safety limit")
-
         if record_path.exists() and record_path.is_symlink():
             raise ManuscriptRecoveryError("recovery draft record cannot be a symlink")
 
         temp_path: Path | None = None
         try:
-            fd, raw_temp = tempfile.mkstemp(
-                prefix=".draft.",
-                suffix=".tmp",
-                dir=record_path.parent,
-            )
+            fd, raw_temp = tempfile.mkstemp(prefix=".draft.", suffix=".tmp", dir=record_path.parent)
             temp_path = Path(raw_temp)
             with os.fdopen(fd, "wb") as handle:
                 handle.write(encoded)
@@ -108,7 +117,6 @@ class ManuscriptRecovery:
         stored = self._read_record(record_path, normalized_path)
         if stored is None or stored["draft_sha256"] != draft_sha or stored["content"] != content:
             raise ManuscriptRecoveryError("recovery draft failed post-write integrity validation")
-        current = self._load_manuscript(project, normalized_path)
         return {
             "schema": "story.authoring-manuscript-recovery-save.v1",
             "project_id": str(project.manifest.get("id") or ""),
@@ -127,9 +135,20 @@ class ManuscriptRecovery:
         expected = _validate_sha256(expected_draft_sha256, "expected_draft_sha256")
         loaded = self._load_manuscript(project, relative_path)
         normalized_path = str(loaded["path"])
+        try:
+            with project_file_lock(project.root, "manuscript", resource=normalized_path):
+                return self._clear_locked(project, normalized_path, expected)
+        except ProjectFileLockError as exc:
+            raise ManuscriptRecoveryError(str(exc)) from exc
+
+    def _clear_locked(
+        self,
+        project: StoryProject,
+        normalized_path: str,
+        expected: str,
+    ) -> dict[str, Any]:
         record_path = self._record_path(project, normalized_path, create=False)
         record = self._read_record(record_path, normalized_path)
-
         if record is None:
             return {
                 "schema": "story.authoring-manuscript-recovery-clear.v1",
@@ -147,7 +166,6 @@ class ManuscriptRecovery:
         if record_path.is_symlink() or not record_path.is_file():
             raise ManuscriptRecoveryError("recovery draft record is not a regular file")
 
-        # Re-read immediately before unlink so a changed slot is not knowingly removed.
         latest = self._read_record(record_path, normalized_path)
         if latest is None or latest["draft_sha256"] != expected:
             raise ManuscriptRecoveryError(
