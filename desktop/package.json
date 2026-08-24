@@ -7,7 +7,9 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "icons": "tauri icon src-tauri/icons/storyos.svg",
+    "sidecar": "python ../scripts/build_storyos_sidecar.py",
     "build": "npm run icons && tsc -b && vite build",
+    "build:tauri": "npm run sidecar && npm run build",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -19,7 +21,6 @@
     "@tauri-apps/cli": "2.8.4",
     "@types/react": "19.1.8",
     "@types/react-dom": "19.1.6",
-    "@vitejs/plugin-react": "4.6.0",
     "typescript": "5.8.3",
     "vite": "7.0.4"
   }
