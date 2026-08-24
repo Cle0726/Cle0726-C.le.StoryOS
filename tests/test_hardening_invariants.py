@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from storyos.claim_review import ClaimReviewWorkbench
@@ -145,3 +146,49 @@ def test_fact_materialization_blocks_future_equal_authority_overlap(tmp_path):
     assert "future_interval_conflict" in item["reasons"]
     issue_codes = {issue["code"] for issue in item["check"]["issues"]}
     assert "canon_interval_conflict" in issue_codes
+
+
+def test_project_data_loader_rejects_symlinks(tmp_path):
+    project = _project(tmp_path / "project")
+    outside = tmp_path / "outside-canon.yaml"
+    _write_yaml(
+        outside,
+        {
+            "schema": "story.canon.v1",
+            "id": stable_id("canon", PROJECT_ID, "outside"),
+            "subject": CHAR,
+            "predicate": "secret.outside",
+            "value": "must-not-be-imported-through-symlink",
+            "authority": "current",
+            "valid_from": 0,
+            "source": {"kind": "test"},
+        },
+    )
+    linked = project.root / "canon" / "outside-link.yaml"
+    try:
+        linked.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks are unavailable in this test environment: {exc}")
+
+    with pytest.raises(ValueError, match="symlink"):
+        StoryProject.open(project.root).load_canon_facts()
+
+
+def test_reference_validator_checks_legacy_fact_alias(tmp_path):
+    project = _project(tmp_path / "project")
+    missing_fact = stable_id("canon", PROJECT_ID, "missing-fact")
+    _write_yaml(
+        project.root / "events" / "legacy-fact-alias.yaml",
+        {
+            "schema": "story.event.v1",
+            "id": stable_id("event", PROJECT_ID, "legacy-fact-alias"),
+            "subject": CHAR,
+            "type": "knowledge.gained",
+            "at": {"sequence": 21, "season": 1, "episode": 1, "scene": 3},
+            "payload": {"fact": missing_fact},
+            "source": {"kind": "test"},
+        },
+    )
+
+    errors = StoryProject.open(project.root).validate_references()
+    assert any(missing_fact in error for error in errors)
