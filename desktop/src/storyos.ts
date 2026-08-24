@@ -12,6 +12,17 @@ import type {
   SceneWorkspaceView,
   WorkspaceSnapshot,
 } from './types';
+import type {
+  CanonCommitPlan,
+  CanonCommitResult,
+  ClaimDecision,
+  ClaimDecisionResult,
+  ClaimReviewQueue,
+  ManuscriptCreateResult,
+  MaterializationPlan,
+  MaterializationResult,
+  ProjectCreateResult,
+} from './productTypes';
 
 type WorkspaceAction =
   | 'snapshot'
@@ -37,6 +48,34 @@ interface WorkspaceRequest {
   through?: number;
 }
 
+type ProductAction =
+  | 'project-create'
+  | 'manuscript-create'
+  | 'claim-review'
+  | 'claim-decide'
+  | 'materialization-plan'
+  | 'materialization-stage'
+  | 'canon-commit-plan'
+  | 'canon-commit';
+
+interface ProductRequest {
+  action: ProductAction;
+  project: string;
+  name?: string;
+  language?: string;
+  title?: string;
+  season?: number;
+  episode?: number;
+  claimId?: string;
+  decision?: ClaimDecision;
+  normalizedPredicate?: string;
+  normalizedValue?: unknown;
+  note?: string;
+  replace?: boolean;
+  confirmSha256?: string;
+  actor?: string;
+}
+
 const MAX_MANUSCRIPT_BYTES = 16 * 1024 * 1024;
 
 function nonEmpty(value: string, label: string): string {
@@ -49,6 +88,13 @@ function nonEmpty(value: string, label: string): string {
 function timelineBoundary(value: number | null | undefined): number | undefined {
   if (value == null) return undefined;
   if (!Number.isSafeInteger(value) || value < 0) throw new Error('时间线边界必须是非负安全整数');
+  return value;
+}
+
+function storyNumber(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 1 || value > 9999) {
+    throw new Error(`${label}必须是 1 到 9999 的整数`);
+  }
   return value;
 }
 
@@ -120,6 +166,16 @@ async function callWorkspace<T>(
   const allowed = Array.isArray(expectedSchemas) ? expectedSchemas : [expectedSchemas];
   if (!allowed.includes(schema)) throw new Error(`StoryOS Workspace schema 不匹配：${schema}`);
   verifyPolicy(row, request.action, schema);
+  return payload as T;
+}
+
+async function callProduct<T>(request: ProductRequest, expectedSchema: string): Promise<T> {
+  const payload = await invoke<unknown>('storyos_product', { request });
+  if (!payload || typeof payload !== 'object') throw new Error('StoryOS 产品服务返回了无效响应');
+  const row = payload as Record<string, unknown>;
+  const schema = String(row.schema ?? '');
+  if (schema !== expectedSchema) throw new Error(`StoryOS 产品服务 schema 不匹配：${schema}`);
+  if (!row.policy || typeof row.policy !== 'object') throw new Error('StoryOS 产品服务缺少安全策略');
   return payload as T;
 }
 
@@ -322,4 +378,111 @@ export function saveManuscript(
     'story.authoring-manuscript-save.v1',
     'story.authoring-manuscript-conflict.v1',
   ]);
+}
+
+export function createStoryProject(
+  project: string,
+  name: string,
+  language = 'zh-CN',
+): Promise<ProjectCreateResult> {
+  return callProduct<ProjectCreateResult>({
+    action: 'project-create',
+    project: nonEmpty(project, '项目目录'),
+    name: nonEmpty(name, '作品名称'),
+    language: nonEmpty(language, '项目语言'),
+  }, 'story.project-create.v1');
+}
+
+export function createStoryManuscript(
+  project: string,
+  title: string,
+  season: number,
+  episode: number,
+): Promise<ManuscriptCreateResult> {
+  return callProduct<ManuscriptCreateResult>({
+    action: 'manuscript-create',
+    project: nonEmpty(project, '项目路径'),
+    title: nonEmpty(title, '章节标题'),
+    season: storyNumber(season, '季号'),
+    episode: storyNumber(episode, '集号'),
+  }, 'story.manuscript-create.v1');
+}
+
+export function loadClaimReviewQueue(project: string, claimId?: string | null): Promise<ClaimReviewQueue> {
+  return callProduct<ClaimReviewQueue>({
+    action: 'claim-review',
+    project: nonEmpty(project, '项目路径'),
+    claimId: claimId ? nonEmpty(claimId, 'Claim ID') : undefined,
+  }, 'story.claim-review-queue.v1');
+}
+
+export function decideClaim(
+  project: string,
+  claimId: string,
+  decision: ClaimDecision,
+  options: {
+    normalizedPredicate?: string;
+    normalizedValue?: unknown;
+    note?: string;
+    replace?: boolean;
+  } = {},
+): Promise<ClaimDecisionResult> {
+  const accepted = decision === 'accept_event_candidate' || decision === 'accept_fact_candidate';
+  if (accepted && !options.normalizedPredicate?.trim()) {
+    throw new Error('接受 Claim 时必须确认规范化 predicate');
+  }
+  return callProduct<ClaimDecisionResult>({
+    action: 'claim-decide',
+    project: nonEmpty(project, '项目路径'),
+    claimId: nonEmpty(claimId, 'Claim ID'),
+    decision,
+    normalizedPredicate: accepted ? nonEmpty(options.normalizedPredicate ?? '', '规范化 predicate') : undefined,
+    normalizedValue: accepted ? options.normalizedValue : undefined,
+    note: options.note ?? '',
+    replace: options.replace ?? false,
+  }, 'story.claim-review-result.v1');
+}
+
+export function loadMaterializationPlan(
+  project: string,
+  claimId?: string | null,
+): Promise<MaterializationPlan> {
+  return callProduct<MaterializationPlan>({
+    action: 'materialization-plan',
+    project: nonEmpty(project, '项目路径'),
+    claimId: claimId ? nonEmpty(claimId, 'Claim ID') : undefined,
+  }, 'story.materialization-plan.v1');
+}
+
+export function stageMaterialization(project: string, claimId: string): Promise<MaterializationResult> {
+  return callProduct<MaterializationResult>({
+    action: 'materialization-stage',
+    project: nonEmpty(project, '项目路径'),
+    claimId: nonEmpty(claimId, 'Claim ID'),
+  }, 'story.materialization-result.v1');
+}
+
+export function loadCanonCommitPlan(project: string, claimId?: string | null): Promise<CanonCommitPlan> {
+  return callProduct<CanonCommitPlan>({
+    action: 'canon-commit-plan',
+    project: nonEmpty(project, '项目路径'),
+    claimId: claimId ? nonEmpty(claimId, 'Claim ID') : undefined,
+  }, 'story.canon-commit-plan.v1');
+}
+
+export function commitCanon(
+  project: string,
+  claimId: string,
+  confirmSha256: string,
+  actor: string,
+  note = '',
+): Promise<CanonCommitResult> {
+  return callProduct<CanonCommitResult>({
+    action: 'canon-commit',
+    project: nonEmpty(project, '项目路径'),
+    claimId: nonEmpty(claimId, 'Claim ID'),
+    confirmSha256: exactSha256(confirmSha256, '候选 SHA-256'),
+    actor: nonEmpty(actor, '提交者'),
+    note,
+  }, 'story.canon-commit-command-result.v1');
 }
