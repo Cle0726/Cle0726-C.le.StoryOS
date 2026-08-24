@@ -63,6 +63,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
+      - name: Set up Node for generated Tauri icons
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package.json
+
+      - name: Install desktop CLI dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Generate Tauri bundle icons
+        working-directory: desktop
+        run: npm run icons
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
