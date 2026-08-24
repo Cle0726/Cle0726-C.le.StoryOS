@@ -105,6 +105,20 @@ def test_create_manuscript_refuses_duplicate_episode_even_with_different_title(t
     assert len(files) == 1
 
 
+def test_create_manuscript_does_not_confuse_ep01_with_ep010(tmp_path):
+    root = tmp_path / "novel"
+    root.mkdir()
+    create_project(root, name="Novel")
+    project = StoryProject.open(root)
+
+    first = create_manuscript(project, title="Ten", season=1, episode=10)
+    second = create_manuscript(project, title="One", season=1, episode=1)
+
+    assert first["path"].startswith("manuscript/S01/EP10_")
+    assert second["path"].startswith("manuscript/S01/EP01_")
+    assert len(list((root / "manuscript" / "S01").glob("*.txt"))) == 2
+
+
 def test_create_manuscript_sanitizes_cross_platform_filename_characters(tmp_path):
     root = tmp_path / "novel"
     root.mkdir()
