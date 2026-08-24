@@ -43,6 +43,22 @@ def _pyinstaller_available() -> None:
         )
 
 
+def _smoke_test(path: Path) -> None:
+    result = subprocess.run(
+        [str(path), "--help"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    output = f"{result.stdout}\n{result.stderr}"
+    if result.returncode != 0 or "storyos-workspace" not in output:
+        raise RuntimeError(
+            "generated StoryOS workspace sidecar failed its --help smoke test"
+        )
+
+
 def main() -> None:
     _pyinstaller_available()
     target = _target_triple()
@@ -92,6 +108,7 @@ def main() -> None:
 
     if os.name != "nt":
         destination.chmod(destination.stat().st_mode | 0o111)
+    _smoke_test(destination)
     print(destination.relative_to(REPO_ROOT).as_posix())
 
 
