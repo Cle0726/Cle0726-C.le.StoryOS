@@ -155,7 +155,9 @@ class ClaimStager:
         """Create a canonical event candidate after explicit human approval.
 
         This method does not write files and does not trust claim.status. The caller must
-        explicitly invoke it as the approval action.
+        explicitly invoke it as the approval action. Approval provenance owns the outer
+        source kind; the original claim provenance is retained without being able to
+        overwrite that authority marker.
         """
         if not validate_id(event_id, "event"):
             raise ValueError(f"invalid event id: {event_id}")
@@ -165,5 +167,9 @@ class ClaimStager:
             type=f"{claim.predicate}.set",
             at=claim.at,
             payload={"value": claim.value, "approved_claim": claim.id},
-            source={"kind": "claim_approval", **claim.source},
+            source={
+                "kind": "claim_approval",
+                "claim_id": claim.id,
+                "claim_source": dict(claim.source),
+            },
         )
