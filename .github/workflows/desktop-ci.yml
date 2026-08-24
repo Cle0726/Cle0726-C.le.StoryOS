@@ -4,11 +4,17 @@ on:
   pull_request:
     paths:
       - 'desktop/**'
+      - 'storyos/**'
+      - 'scripts/build_storyos_sidecar.py'
+      - 'pyproject.toml'
       - '.github/workflows/desktop-ci.yml'
   push:
     branches: [main]
     paths:
       - 'desktop/**'
+      - 'storyos/**'
+      - 'scripts/build_storyos_sidecar.py'
+      - 'pyproject.toml'
       - '.github/workflows/desktop-ci.yml'
 
 permissions:
@@ -78,8 +84,21 @@ jobs:
         working-directory: desktop
         run: npm run icons
 
+      - name: Set up Python for StoryOS sidecar
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install StoryOS sidecar build dependencies
+        working-directory: ${{ github.workspace }}
+        run: python -m pip install -e ".[desktop]"
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate trusted StoryOS workspace sidecar
+        working-directory: ${{ github.workspace }}
+        run: python scripts/build_storyos_sidecar.py
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
