@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -b && vite build",
+    "icons": "tauri icon src-tauri/icons/storyos.svg",
+    "build": "npm run icons && tsc -b && vite build",
     "tauri": "tauri"
   },
   "dependencies": {
