@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 
 const NAV_COLLAPSED_KEY = 'cle.storyos.ui.nav-collapsed.v1';
 const INSPECTOR_COLLAPSED_KEY = 'cle.storyos.ui.inspector-collapsed.v1';
@@ -283,7 +291,7 @@ export default function InteractionController() {
     }, 24);
   }
 
-  function beginResize(side: ResizeSide, event: React.PointerEvent<HTMLButtonElement>) {
+  function beginResize(side: ResizeSide, event: ReactPointerEvent<HTMLButtonElement>) {
     if (focusMode) return;
     const panel = document.querySelector<HTMLElement>(side === 'nav' ? '.product-navigator' : '.product-inspector');
     if (!panel) return;
@@ -296,7 +304,7 @@ export default function InteractionController() {
     event.preventDefault();
   }
 
-  function keyboardResize(side: ResizeSide, event: React.KeyboardEvent<HTMLButtonElement>) {
+  function keyboardResize(side: ResizeSide, event: ReactKeyboardEvent<HTMLButtonElement>) {
     if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     event.preventDefault();
     const direction = event.key === 'ArrowRight' ? 1 : -1;
@@ -328,6 +336,19 @@ export default function InteractionController() {
     window.requestAnimationFrame(syncWorkspaceGeometry);
   }
 
+  function openSearch() {
+    if (!document.querySelector<HTMLTextAreaElement>('.manuscript-editor')) {
+      announce('请先打开一个正文章节');
+      return;
+    }
+    setPaletteOpen(false);
+    setSearchQuery('');
+    setSearchMatches([]);
+    setSearchTruncated(false);
+    setSearchOpen(true);
+    window.setTimeout(() => searchInputRef.current?.focus(), 0);
+  }
+
   const buildCommands = useCallback((): PaletteCommand[] => {
     const rows: PaletteCommand[] = [
       { id: 'view-nav', label: navCollapsed ? '展开作品书架' : '收起作品书架', detail: '视图', keywords: '导航 左侧 书架', run: toggleNav },
@@ -337,7 +358,7 @@ export default function InteractionController() {
 
     const editor = document.querySelector<HTMLTextAreaElement>('.manuscript-editor');
     if (editor) {
-      rows.push({ id: 'find-manuscript', label: '查找当前正文', detail: 'Cmd/Ctrl + F', keywords: '全文 搜索 查找', run: () => openSearch() });
+      rows.push({ id: 'find-manuscript', label: '查找当前正文', detail: 'Cmd/Ctrl + F', keywords: '全文 搜索 查找', run: openSearch });
       const saveButton = document.querySelector<HTMLButtonElement>('.save-button');
       if (saveButton && !saveButton.disabled) {
         rows.push({
@@ -388,19 +409,6 @@ export default function InteractionController() {
     window.setTimeout(() => paletteInputRef.current?.focus(), 0);
   }
 
-  function openSearch() {
-    if (!document.querySelector<HTMLTextAreaElement>('.manuscript-editor')) {
-      announce('请先打开一个正文章节');
-      return;
-    }
-    setPaletteOpen(false);
-    setSearchQuery('');
-    setSearchMatches([]);
-    setSearchTruncated(false);
-    setSearchOpen(true);
-    window.setTimeout(() => searchInputRef.current?.focus(), 0);
-  }
-
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       const key = event.key.toLocaleLowerCase();
@@ -427,7 +435,7 @@ export default function InteractionController() {
     };
     window.addEventListener('keydown', handleShortcut, true);
     return () => window.removeEventListener('keydown', handleShortcut, true);
-  }, [paletteOpen, searchOpen]);
+  }, [paletteOpen, searchOpen, buildCommands]);
 
   useEffect(() => {
     if (!searchOpen || !searchQuery) {
