@@ -5,7 +5,9 @@ from pathlib import Path
 
 import yaml
 
+from storyos.claim_review import ClaimReviewWorkbench
 from storyos.ids import stable_id
+from storyos.materialization import MaterializationWorkbench
 from storyos.project import StoryProject
 from storyos.scene_workspace import SceneWorkspace
 
@@ -13,6 +15,7 @@ from storyos.scene_workspace import SceneWorkspace
 PROJECT_ID = "hardening-invariants-test"
 CHAR = stable_id("character", PROJECT_ID, "pov")
 FUTURE_FACT = stable_id("canon", PROJECT_ID, "future-fact")
+FUTURE_CLAIM = stable_id("claim", PROJECT_ID, "future-overlap-claim")
 
 
 def _write_yaml(path: Path, data: dict) -> None:
@@ -103,3 +106,42 @@ def test_pov_hides_known_fact_until_fact_is_active(tmp_path):
     assert knowledge["visible"] == []
     assert knowledge["hidden_inactive"] == 1
     assert "must-not-leak-before-valid-from" not in json.dumps(view, ensure_ascii=False)
+
+
+def test_fact_materialization_blocks_future_equal_authority_overlap(tmp_path):
+    project = _project(tmp_path / "project")
+    _write_yaml(
+        project.root / "staging" / "claims" / "future-overlap.yaml",
+        {
+            "schema": "story.claim.v1",
+            "id": FUTURE_CLAIM,
+            "subject": CHAR,
+            "predicate": "identity.future_secret",
+            "value": "different-value-before-future-canon",
+            "at": {"sequence": 10, "season": 1, "episode": 1, "scene": 1},
+            "confidence": 0.9,
+            "source": {"kind": "test"},
+            "proposed_authority": "current",
+            "status": "pending",
+        },
+    )
+    project = StoryProject.open(project.root)
+
+    ClaimReviewWorkbench().decide(
+        project,
+        claim_id=FUTURE_CLAIM,
+        decision="accept_fact_candidate",
+        normalized_predicate="identity.future_secret",
+        normalized_value="different-value-before-future-canon",
+        note="must not create a future equal-authority overlap",
+    )
+
+    item = MaterializationWorkbench().build_plan(
+        StoryProject.open(project.root),
+        claim_id=FUTURE_CLAIM,
+    )["items"][0]
+
+    assert item["ready"] is False
+    assert "future_interval_conflict" in item["reasons"]
+    issue_codes = {issue["code"] for issue in item["check"]["issues"]}
+    assert "canon_interval_conflict" in issue_codes
