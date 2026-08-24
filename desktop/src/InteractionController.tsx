@@ -118,6 +118,7 @@ export default function InteractionController() {
   const [navCollapsed, setNavCollapsed] = useState(() => storedBoolean(NAV_COLLAPSED_KEY));
   const [inspectorCollapsed, setInspectorCollapsed] = useState(() => storedBoolean(INSPECTOR_COLLAPSED_KEY));
   const [workspaceVisible, setWorkspaceVisible] = useState(() => !!document.querySelector('.product-shell'));
+  const [manuscriptVisible, setManuscriptVisible] = useState(() => !!document.querySelector('.manuscript-editor'));
   const [focusMode, setFocusMode] = useState(() => !!document.querySelector('.product-shell.focus-mode'));
   const [toast, setToast] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -184,6 +185,7 @@ export default function InteractionController() {
       const shell = root.querySelector('.product-shell');
       const activeFocus = !!root.querySelector('.product-shell.focus-mode');
       setWorkspaceVisible(!!shell);
+      setManuscriptVisible(!!root.querySelector('.manuscript-editor'));
       setFocusMode(activeFocus);
       syncWorkspaceGeometry();
 
@@ -419,7 +421,7 @@ export default function InteractionController() {
         else openPalette();
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && key === 'f' && document.querySelector('.manuscript-editor')) {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && key === 'f' && document.querySelector('.manuscript-editor')) {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (searchOpen) setSearchOpen(false);
@@ -522,7 +524,7 @@ export default function InteractionController() {
         <button type="button" aria-label="命令面板" title="命令面板 · Cmd/Ctrl + K" onClick={openPalette}>
           <CommandIcon />
         </button>
-        <button type="button" aria-label="查找当前正文" title="查找当前正文 · Cmd/Ctrl + F" onClick={openSearch} disabled={!document.querySelector('.manuscript-editor')}>
+        <button type="button" aria-label="查找当前正文" title="查找当前正文 · Cmd/Ctrl + F" onClick={openSearch} disabled={!manuscriptVisible}>
           <SearchIcon />
         </button>
         <span className="interaction-dock-divider" aria-hidden="true" />
