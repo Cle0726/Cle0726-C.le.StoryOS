@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from storyos.events import StoryEvent
+from storyos.events import StoryEvent, validate_projection_semantics
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,9 @@ class KnowledgeTimeline:
     """Point-in-time knowledge queries derived only from canonical events."""
 
     def __init__(self, events: Iterable[StoryEvent]):
-        self._events = tuple(sorted(events, key=lambda e: (e.at.sequence, e.id)))
+        event_list = list(events)
+        validate_projection_semantics(event_list)
+        self._events = tuple(sorted(event_list, key=lambda e: (e.at.sequence, e.id)))
 
     def known_facts(self, entity_id: str, *, through_sequence: int | None = None) -> set[str]:
         facts: set[str] = set()
