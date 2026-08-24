@@ -7,3 +7,8 @@ __pycache__/
 dist/
 build/
 *.spec
+
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/

@@ -1,0 +1,173 @@
+.scene-context {
+  display: grid;
+  gap: 11px;
+}
+
+.scene-context-heading { align-items: flex-start; }
+
+.scene-context-mode {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.scene-context-mode span {
+  color: var(--muted, #8194a6);
+  font-weight: 600;
+}
+
+.scene-context-mode select {
+  width: 100%;
+  min-width: 0;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #85a7c2 50%),
+    linear-gradient(135deg, #85a7c2 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) calc(50% - 2px),
+    calc(100% - 11px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+}
+
+.scene-context-boundary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 11px 12px;
+  border: 1px solid rgba(157, 196, 227, 0.15);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(113, 172, 218, .12), transparent 45%),
+    rgba(20, 42, 60, .28);
+  box-shadow: inset 0 1px rgba(255,255,255,.03);
+}
+
+.scene-context-boundary span,
+.scene-context-boundary small { color: var(--muted, #8194a6); }
+.scene-context-boundary strong { justify-self: end; color: #d7e8f4; }
+.scene-context-boundary small { grid-column: 1 / -1; }
+
+.scene-context-safe-note,
+.scene-context-warning {
+  padding: 10px 11px;
+  border: 1px solid rgba(143, 188, 224, 0.14);
+  border-radius: 10px;
+  color: #9fb8cb;
+  background: rgba(45, 88, 119, .11);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.scene-context-safe-note {
+  border-color: rgba(112, 177, 221, .2);
+  background: linear-gradient(90deg, rgba(56, 108, 143, .16), rgba(29, 62, 85, .08));
+  color: #afd1e8;
+}
+
+.scene-context-card,
+.scene-context-conflict,
+.scene-context-fact,
+.scene-context-event {
+  border: 1px solid rgba(161, 196, 224, 0.11);
+  border-radius: 11px;
+  padding: 10px;
+  background: rgba(8, 23, 35, .26);
+  box-shadow: inset 0 1px rgba(255,255,255,.02);
+}
+
+.scene-context-card {
+  display: grid;
+  gap: 8px;
+  background:
+    linear-gradient(145deg, rgba(36, 69, 94, .2), rgba(8, 24, 36, .28));
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+
+.scene-context-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(149, 197, 235, .18);
+  background: linear-gradient(145deg, rgba(43, 80, 107, .24), rgba(9, 26, 40, .32));
+}
+
+.scene-context-card-heading,
+.scene-context-line,
+.scene-context-event {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.scene-context-card-heading strong { color: #d8e6f1; font-size: 12px; }
+
+.scene-context-line span,
+.scene-context-fact span,
+.scene-context-conflict span,
+.scene-context-event span,
+.scene-context-event code {
+  color: var(--muted, #8194a6);
+  font-size: 11px;
+}
+
+.scene-context-line b {
+  max-width: 58%;
+  overflow-wrap: anywhere;
+  text-align: right;
+  color: #c7d7e3;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.scene-context-stack { display: grid; gap: 7px; }
+
+.scene-context-subtitle {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #758da1;
+}
+
+.scene-context-tag {
+  padding: 3px 7px;
+  border: 1px solid rgba(130, 187, 231, .18);
+  border-radius: 999px;
+  color: #9dc7e6;
+  background: rgba(68, 125, 166, .12);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.scene-context-fact,
+.scene-context-conflict {
+  display: grid;
+  gap: 4px;
+}
+
+.scene-context-fact strong,
+.scene-context-conflict strong { color: #cbdbe7; font-size: 11px; }
+.scene-context-fact span,
+.scene-context-conflict span { overflow-wrap: anywhere; }
+
+.scene-context-conflict {
+  border-color: rgba(216, 152, 159, .16);
+  background: rgba(76, 35, 42, .14);
+}
+
+.scene-context-event {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  background: rgba(25, 51, 71, .2);
+}
+.scene-context-event strong { flex: 1 1 auto; color: #c9d9e6; font-size: 11px; }
+.scene-context-event code { overflow-wrap: anywhere; color: #8eacc2; }
+
+.inspector-divider {
+  height: 1px;
+  margin: 18px 0;
+  background: linear-gradient(90deg, transparent, rgba(156, 193, 222, .16), transparent);
+}

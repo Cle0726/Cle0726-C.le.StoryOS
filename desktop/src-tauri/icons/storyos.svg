@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">StoryOS application icon</title>
+  <desc id="desc">A silver story ribbon rising from an open book, encircled by a stellar orbit on a deep blue glass tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08111f"/>
+      <stop offset="0.48" stop-color="#102744"/>
+      <stop offset="1" stop-color="#050b14"/>
+    </linearGradient>
+    <radialGradient id="depth" cx="0.68" cy="0.2" r="0.95">
+      <stop offset="0" stop-color="#4f86bd" stop-opacity="0.34"/>
+      <stop offset="0.43" stop-color="#23486f" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#02060c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.34" stop-color="#e4edf8"/>
+      <stop offset="0.68" stop-color="#9fb8d1"/>
+      <stop offset="1" stop-color="#f9fcff"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3f6e9c" stop-opacity="0.72"/>
+      <stop offset="0.55" stop-color="#1e456d" stop-opacity="0.58"/>
+      <stop offset="1" stop-color="#91bfe7" stop-opacity="0.34"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8bc4ff"/>
+      <stop offset="0.6" stop-color="#3c79b7"/>
+      <stop offset="1" stop-color="#d6efff"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="tileClip"><rect x="72" y="72" width="880" height="880" rx="196"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#tileClip)">
+    <rect x="72" y="72" width="880" height="880" rx="196" fill="url(#tile)"/>
+    <rect x="72" y="72" width="880" height="880" rx="196" fill="url(#depth)"/>
+
+    <g fill="#9cc9f2" opacity="0.7">
+      <circle cx="205" cy="232" r="3"/><circle cx="286" cy="154" r="2"/><circle cx="372" cy="225" r="2.6"/>
+      <circle cx="798" cy="180" r="2.4"/><circle cx="860" cy="314" r="2"/><circle cx="760" cy="370" r="2.7"/>
+      <circle cx="170" cy="650" r="2.5"/><circle cx="238" cy="816" r="2"/><circle cx="845" cy="712" r="3"/>
+      <circle cx="710" cy="840" r="2.2"/><circle cx="540" cy="158" r="2"/><circle cx="480" cy="860" r="2"/>
+    </g>
+
+    <path d="M58 860 C250 920 598 955 984 742" fill="none" stroke="#4d91dd" stroke-width="22" opacity="0.16" filter="url(#glow)"/>
+    <path d="M65 870 C340 935 708 922 982 738" fill="none" stroke="#8fcaff" stroke-width="4" opacity="0.74"/>
+
+    <g id="book" transform="translate(0 18)">
+      <path d="M250 650 C330 620 407 625 512 691 C617 625 694 620 774 650 L756 814 C668 785 592 790 512 846 C432 790 356 785 268 814 Z" fill="#071527" stroke="url(#edge)" stroke-width="10"/>
+      <path d="M273 631 C350 604 421 615 512 674 L512 814 C438 762 365 752 287 775 Z" fill="url(#page)" stroke="#9ac7ec" stroke-width="4"/>
+      <path d="M751 631 C674 604 603 615 512 674 L512 814 C586 762 659 752 737 775 Z" fill="url(#page)" stroke="#9ac7ec" stroke-width="4"/>
+      <path d="M512 674 L512 814" stroke="#cce8ff" stroke-opacity="0.72" stroke-width="5"/>
+      <path d="M302 693 C377 668 431 677 491 713" fill="none" stroke="#b9ddf7" stroke-opacity="0.26" stroke-width="3"/>
+      <path d="M722 693 C647 668 593 677 533 713" fill="none" stroke="#b9ddf7" stroke-opacity="0.26" stroke-width="3"/>
+    </g>
+
+    <path d="M565 258 C466 248 379 297 376 372 C372 443 468 476 525 514 C589 557 596 625 547 720 C647 652 686 566 648 498 C614 438 535 417 499 382 C461 345 488 301 565 258 Z" fill="url(#silver)" filter="url(#soft)"/>
+    <path d="M565 258 C466 248 379 297 376 372 C372 443 468 476 525 514" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="4"/>
+
+    <ellipse cx="510" cy="500" rx="335" ry="135" transform="rotate(-18 510 500)" fill="none" stroke="#dceeff" stroke-width="9" opacity="0.88"/>
+    <ellipse cx="510" cy="500" rx="335" ry="135" transform="rotate(-18 510 500)" fill="none" stroke="#6da6dc" stroke-width="20" opacity="0.13" filter="url(#glow)"/>
+
+    <g fill="url(#silver)" stroke="#eff8ff" stroke-width="3" filter="url(#soft)">
+      <circle cx="248" cy="591" r="18"/>
+      <circle cx="405" cy="694" r="23"/>
+      <circle cx="704" cy="404" r="19"/>
+      <circle cx="812" cy="514" r="21"/>
+    </g>
+
+    <g transform="translate(735 188)" fill="#fff" filter="url(#glow)">
+      <path d="M0 -62 C6 -18 18 -6 62 0 C18 6 6 18 0 62 C-6 18 -18 6 -62 0 C-18 -6 -6 -18 0 -62 Z"/>
+      <circle cx="0" cy="0" r="7"/>
+    </g>
+    <g transform="translate(268 300)" fill="#d9efff" opacity="0.9">
+      <path d="M0 -20 C2 -6 6 -2 20 0 C6 2 2 6 0 20 C-2 6 -6 2 -20 0 C-6 -2 -2 -6 0 -20 Z"/>
+    </g>
+  </g>
+
+  <rect x="72" y="72" width="880" height="880" rx="196" fill="none" stroke="url(#edge)" stroke-width="8"/>
+  <rect x="84" y="84" width="856" height="856" rx="184" fill="none" stroke="#e8f6ff" stroke-opacity="0.16" stroke-width="3"/>
+</svg>

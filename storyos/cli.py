@@ -5,8 +5,12 @@ import json
 from dataclasses import asdict
 
 from storyos.authority import CanonResolver
+from storyos.canon_commit import CanonCommitError
+from storyos.canon_commit_service import CanonCommitWorkbench
+from storyos.claim_review import ClaimReviewError, ClaimReviewWorkbench, ReviewDecision
 from storyos.claims import ClaimStager
 from storyos.knowledge import KnowledgeTimeline
+from storyos.materialization import MaterializationError, MaterializationWorkbench
 from storyos.project import StoryProject
 from storyos.state import StoryStateProjector
 
@@ -51,6 +55,46 @@ def main() -> None:
     p_claims = sub.add_parser("claims", help="Check staged claims without modifying Canon")
     p_claims.add_argument("project")
     p_claims.add_argument("--id", dest="claim_id", default=None)
+
+    p_review = sub.add_parser("claim-review", help="Build the non-canonical claim review queue")
+    p_review.add_argument("project")
+    p_review.add_argument("--subject", default=None)
+    p_review.add_argument("--predicate", default=None)
+    p_review.add_argument("--claim", dest="claim_id", default=None)
+
+    p_decide = sub.add_parser("claim-decide", help="Persist one non-canonical review sidecar")
+    p_decide.add_argument("project")
+    p_decide.add_argument("claim_id")
+    p_decide.add_argument("--decision", required=True, choices=[item.value for item in ReviewDecision])
+    p_decide.add_argument("--predicate", dest="normalized_predicate", default=None)
+    p_decide.add_argument("--value-json", default=None)
+    p_decide.add_argument("--note", default="")
+    p_decide.add_argument("--replace", action="store_true")
+
+    p_mat_plan = sub.add_parser("materialization-plan", help="Recheck reviewed claims for quarantine materialization")
+    p_mat_plan.add_argument("project")
+    p_mat_plan.add_argument("--claim", dest="claim_id", default=None)
+
+    p_mat_stage = sub.add_parser("materialization-stage", help="Write one ready claim to quarantine staging")
+    p_mat_stage.add_argument("project")
+    p_mat_stage.add_argument("claim_id")
+
+    p_commit_plan = sub.add_parser(
+        "canon-commit-plan",
+        help="Inspect whether staged quarantine candidates are safe for explicit Canon commit",
+    )
+    p_commit_plan.add_argument("project")
+    p_commit_plan.add_argument("--claim", dest="claim_id", default=None)
+
+    p_commit = sub.add_parser(
+        "canon-commit",
+        help="Create one canonical Event/Fact from an exact reviewed quarantine candidate",
+    )
+    p_commit.add_argument("project")
+    p_commit.add_argument("claim_id")
+    p_commit.add_argument("--confirm-sha256", required=True)
+    p_commit.add_argument("--actor", required=True)
+    p_commit.add_argument("--note", default="")
 
     args = parser.parse_args()
     project = StoryProject.open(args.project)
@@ -102,13 +146,121 @@ def main() -> None:
         return
 
     if args.command == "knowledge":
-        facts = KnowledgeTimeline(project.load_events()).known_facts(
-            args.entity,
-            through_sequence=args.through,
-        )
+        facts = KnowledgeTimeline(project.load_events()).known_facts(args.entity, through_sequence=args.through)
+        print(json.dumps({"entity": args.entity, "through": args.through, "facts": sorted(facts)}, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
+    if args.command == "claim-review":
+        try:
+            payload = ClaimReviewWorkbench().build_queue(
+                project,
+                subject=args.subject,
+                predicate=args.predicate,
+                claim_id=args.claim_id,
+            )
+        except ClaimReviewError as exc:
+            parser.exit(2, f"storyos: claim review failed: {exc}\n")
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
+    if args.command == "claim-decide":
+        kwargs = {}
+        if args.value_json is not None:
+            try:
+                kwargs["normalized_value"] = json.loads(args.value_json)
+            except json.JSONDecodeError as exc:
+                parser.exit(2, f"storyos: invalid --value-json: {exc}\n")
+        try:
+            review, result = ClaimReviewWorkbench().decide(
+                project,
+                claim_id=args.claim_id,
+                decision=args.decision,
+                normalized_predicate=args.normalized_predicate,
+                note=args.note,
+                replace=args.replace,
+                **kwargs,
+            )
+        except (ClaimReviewError, ValueError) as exc:
+            parser.exit(2, f"storyos: claim decision failed: {exc}\n")
         print(
             json.dumps(
-                {"entity": args.entity, "through": args.through, "facts": sorted(facts)},
+                {
+                    "schema": "story.claim-review-result.v1",
+                    "result": result,
+                    "review": review.as_mapping(),
+                    "policy": {"canonical_mutation": False, "materialization_required": True},
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if args.command == "materialization-plan":
+        try:
+            payload = MaterializationWorkbench().build_plan(project, claim_id=args.claim_id)
+        except (MaterializationError, ValueError) as exc:
+            parser.exit(2, f"storyos: materialization plan failed: {exc}\n")
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
+    if args.command == "materialization-stage":
+        try:
+            candidate, result = MaterializationWorkbench().stage(project, claim_id=args.claim_id)
+        except (MaterializationError, ValueError) as exc:
+            parser.exit(2, f"storyos: materialization staging failed: {exc}\n")
+        print(
+            json.dumps(
+                {
+                    "schema": "story.materialization-result.v1",
+                    "result": result,
+                    "candidate": candidate,
+                    "policy": {
+                        "quarantine_only": True,
+                        "canonical_mutation": False,
+                        "commit_required": True,
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if args.command == "canon-commit-plan":
+        try:
+            payload = CanonCommitWorkbench().build_plan(project, claim_id=args.claim_id)
+        except (CanonCommitError, MaterializationError, ValueError) as exc:
+            parser.exit(2, f"storyos: Canon commit plan failed: {exc}\n")
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+
+    if args.command == "canon-commit":
+        try:
+            commit_result, result = CanonCommitWorkbench().commit(
+                project,
+                claim_id=args.claim_id,
+                confirm_sha256=args.confirm_sha256,
+                actor=args.actor,
+                note=args.note,
+            )
+        except (CanonCommitError, MaterializationError, ValueError) as exc:
+            parser.exit(2, f"storyos: Canon commit failed: {exc}\n")
+        print(
+            json.dumps(
+                {
+                    "schema": "story.canon-commit-command-result.v1",
+                    "result": result,
+                    "commit": commit_result,
+                    "policy": {
+                        "explicit_candidate_sha256_confirmation": True,
+                        "canonical_create_only": True,
+                        "canonical_overwrite": False,
+                        "audit_precedes_canonical_mutation": True,
+                    },
+                },
                 ensure_ascii=False,
                 indent=2,
                 sort_keys=True,
