@@ -46,6 +46,10 @@ function installWorkspace({ manuscript = true }: { manuscript?: boolean } = {}) 
   act(() => controllerRoot!.render(<InteractionController />));
 }
 
+function manuscriptSearchDialog(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.manuscript-search[role="dialog"][aria-label="查找当前正文"]');
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   document.documentElement.className = '';
@@ -79,7 +83,7 @@ describe('InteractionController', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }));
     });
 
-    expect(document.querySelector('[aria-label="查找当前正文"]')).not.toBeNull();
+    expect(manuscriptSearchDialog()).not.toBeNull();
   });
 
   it('does not steal Cmd/Ctrl+Shift+F from the existing focus-mode shortcut', () => {
@@ -96,7 +100,7 @@ describe('InteractionController', () => {
       }));
     });
 
-    expect(document.querySelector('[aria-label="查找当前正文"]')).toBeNull();
+    expect(manuscriptSearchDialog()).toBeNull();
     expect(downstream).toHaveBeenCalledTimes(1);
     window.removeEventListener('keydown', downstream);
   });
