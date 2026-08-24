@@ -262,6 +262,7 @@ def test_workspace_cli_returns_structured_read_only_conflict(tmp_path, monkeypat
         "read_only": True,
         "manuscript_mutation": False,
         "history_mutation": False,
+        "recovery_mutation": False,
         "canonical_mutation": False,
         "staging_mutation": False,
     }
