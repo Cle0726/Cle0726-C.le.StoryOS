@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from storyos.events import StoryEvent
+from storyos.events import StoryEvent, validate_projection_semantics
 
 
 @dataclass
@@ -24,8 +24,10 @@ class StoryStateProjector:
         *,
         through_sequence: int | None = None,
     ) -> dict[str, EntityState]:
+        event_list = list(events)
+        validate_projection_semantics(event_list)
         states: dict[str, EntityState] = {}
-        ordered = sorted(events, key=lambda e: (e.at.sequence, e.id))
+        ordered = sorted(event_list, key=lambda e: (e.at.sequence, e.id))
 
         for event in ordered:
             if through_sequence is not None and event.at.sequence > through_sequence:
