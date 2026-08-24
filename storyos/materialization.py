@@ -7,10 +7,12 @@ from typing import Any
 
 import yaml
 
+from storyos.atomic_io import AtomicWriteError, atomic_create_text
 from storyos.authority import CanonFact
 from storyos.claim_review import ClaimReviewWorkbench, ReviewDecision, claim_fingerprint
 from storyos.claims import CandidateClaim, ClaimStager, ClaimStatus
 from storyos.events import StoryEvent
+from storyos.file_lock import ProjectFileLockError, project_file_lock
 from storyos.ids import stable_id
 from storyos.project import StoryProject
 
@@ -92,34 +94,69 @@ class MaterializationWorkbench:
                 "stale_reviews_rejected": True,
                 "conflicts_rechecked_at_plan_time": True,
                 "fact_validity_intervals_checked": True,
+                "atomic_create_only_publication": True,
             },
         }
 
     def stage(self, project: StoryProject, *, claim_id: str) -> tuple[dict[str, Any], str]:
-        plan = self.build_plan(project, claim_id=claim_id)
-        if not plan["items"]:
-            raise MaterializationError(f"unknown staged claim: {claim_id}")
-        item = plan["items"][0]
-        if not item["ready"]:
-            reasons = ", ".join(item["reasons"]) or "not_ready"
-            raise MaterializationError(f"claim is not ready for materialization staging: {reasons}")
+        try:
+            with project_file_lock(project.root, "materialization", resource=claim_id):
+                # Rebuild while holding the per-claim staging lock so two StoryOS writers
+                # cannot race from an older plan into different quarantine payloads.
+                plan = self.build_plan(project, claim_id=claim_id)
+                if not plan["items"]:
+                    raise MaterializationError(f"unknown staged claim: {claim_id}")
+                item = plan["items"][0]
+                if not item["ready"]:
+                    reasons = ", ".join(item["reasons"]) or "not_ready"
+                    raise MaterializationError(
+                        f"claim is not ready for materialization staging: {reasons}"
+                    )
 
-        mapping = quarantine_mapping_from_plan_item(item)
-        kind = str(item["kind"])
-        target_id = str(item["target_id"])
-        directory = "events" if kind == "event" else "facts"
-        destination = project.root / "staging" / "materialization" / directory / f"{target_id}.yaml"
+                mapping = quarantine_mapping_from_plan_item(item)
+                kind = str(item["kind"])
+                target_id = str(item["target_id"])
+                directory = "events" if kind == "event" else "facts"
+                destination = (
+                    project.root
+                    / "staging"
+                    / "materialization"
+                    / directory
+                    / f"{target_id}.yaml"
+                )
 
-        if destination.exists():
-            existing = _load_data(destination)
-            if existing == mapping:
-                return mapping, "unchanged"
-            raise MaterializationError(
-                f"materialization candidate already exists with different content: {target_id}"
-            )
+                if destination.exists():
+                    if destination.is_symlink():
+                        raise MaterializationError(
+                            "materialization candidate destination cannot be a symlink"
+                        )
+                    existing = _load_data(destination)
+                    if existing == mapping:
+                        return mapping, "unchanged"
+                    raise MaterializationError(
+                        "materialization candidate already exists with different content: "
+                        f"{target_id}"
+                    )
 
-        _write_yaml(destination, mapping)
-        return mapping, "created"
+                text = yaml.safe_dump(
+                    mapping,
+                    allow_unicode=True,
+                    sort_keys=False,
+                    width=120,
+                )
+                try:
+                    atomic_create_text(project.root, destination, text)
+                except FileExistsError:
+                    existing = _load_data(destination)
+                    if existing == mapping:
+                        return mapping, "unchanged"
+                    raise MaterializationError(
+                        "materialization candidate was concurrently created with different content: "
+                        f"{target_id}"
+                    )
+                return mapping, "created"
+        except (AtomicWriteError, ProjectFileLockError) as exc:
+            raise MaterializationError(str(exc)) from exc
 
     def _build_item(self, claim: CandidateClaim, *, review, canon_facts, events) -> MaterializationItem:
         empty_check = {"can_approve": False, "duplicate_of": None, "issues": []}
@@ -366,9 +403,3 @@ def _load_data(path: Path) -> Any:
         if path.suffix.lower() == ".json":
             return json.load(fh)
         return yaml.safe_load(fh)
-
-
-def _write_yaml(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text = yaml.safe_dump(data, allow_unicode=True, sort_keys=False, width=120)
-    path.write_text(text, encoding="utf-8", newline="\n")
