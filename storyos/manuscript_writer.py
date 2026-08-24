@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from storyos.file_lock import ProjectFileLockError, project_file_lock
 from storyos.manuscript_history import ManuscriptHistory, ManuscriptHistoryError
 from storyos.project import StoryProject
 from storyos.workspace import AuthoringWorkspace, AuthoringWorkspaceError
@@ -23,12 +24,11 @@ class ManuscriptConflictError(ManuscriptWriteError):
 
 
 class ManuscriptWriter:
-    """Write only existing manuscript working copies behind an exact SHA-256 CAS guard.
+    """Write existing manuscript working copies behind SHA-256 CAS and project locks.
 
-    This class has no Canon, staging, review, materialization, or claim mutation methods.
-    It deliberately reuses the read-only workspace path validator before every write.
-    Immediately before replacing a manuscript it archives the version being replaced
-    into the content-addressed manuscript history store.
+    The lock serializes StoryOS writers for one manuscript. External editors do not
+    necessarily honor StoryOS locks, so the exact SHA guard is rechecked immediately
+    before archive/replace and the written bytes are verified after replacement.
     """
 
     def __init__(self) -> None:
@@ -78,6 +78,42 @@ class ManuscriptWriter:
                 f"manuscript exceeds the {MAX_MANUSCRIPT_BYTES}-byte safety limit"
             )
 
+        try:
+            with project_file_lock(
+                project.root,
+                "manuscript",
+                resource=normalized_path,
+            ):
+                return self._save_locked(
+                    project,
+                    candidate,
+                    path,
+                    normalized_path,
+                    expected,
+                    next_raw,
+                )
+        except ProjectFileLockError as exc:
+            raise ManuscriptWriteError(str(exc)) from exc
+
+    def _save_locked(
+        self,
+        project: StoryProject,
+        candidate: Path,
+        path: Path,
+        normalized_path: str,
+        expected: str,
+        next_raw: bytes,
+    ) -> dict[str, Any]:
+        if candidate.is_symlink():
+            raise ManuscriptWriteError("manuscript became a symlink before save")
+        latest_raw = path.read_bytes()
+        latest_sha = hashlib.sha256(latest_raw).hexdigest()
+        if latest_sha != expected:
+            raise ManuscriptConflictError(
+                "manuscript changed during save; reload before retrying "
+                f"(expected {expected}, current {latest_sha})"
+            )
+
         previous_mode = stat.S_IMODE(path.stat().st_mode)
         temp_path: Path | None = None
         archived: dict[str, Any] | None = None
@@ -95,25 +131,26 @@ class ManuscriptWriter:
             try:
                 os.chmod(temp_path, previous_mode)
             except OSError:
-                # Permission-mode preservation is best effort on platforms that do not expose it.
                 pass
 
-            # Recheck immediately before history/archive + replace so another editor cannot
-            # be silently overwritten. No history mutation happens on a stale save.
+            # Final CAS check is inside the StoryOS writer lock and occurs immediately
+            # before the history mutation + atomic replacement.
             if candidate.is_symlink():
-                raise ManuscriptWriteError("manuscript became a symlink before save")
-            latest_raw = path.read_bytes()
-            latest_sha = hashlib.sha256(latest_raw).hexdigest()
-            if latest_sha != expected:
+                raise ManuscriptWriteError("manuscript became a symlink before replace")
+            final_raw = path.read_bytes()
+            final_sha = hashlib.sha256(final_raw).hexdigest()
+            if final_sha != expected:
                 raise ManuscriptConflictError(
-                    "manuscript changed during save; reload before retrying "
-                    f"(expected {expected}, current {latest_sha})"
+                    "manuscript changed immediately before replace; reload before retrying "
+                    f"(expected {expected}, current {final_sha})"
                 )
 
             try:
-                archived = self._history.archive_bytes(project, normalized_path, latest_raw)
+                archived = self._history.archive_bytes(project, normalized_path, final_raw)
             except ManuscriptHistoryError as exc:
-                raise ManuscriptWriteError(f"failed to archive previous manuscript revision: {exc}") from exc
+                raise ManuscriptWriteError(
+                    f"failed to archive previous manuscript revision: {exc}"
+                ) from exc
 
             os.replace(temp_path, path)
             temp_path = None
@@ -125,6 +162,10 @@ class ManuscriptWriter:
                     pass
 
         written = path.read_bytes()
+        if written != next_raw:
+            raise ManuscriptWriteError(
+                "manuscript bytes changed during post-write verification; inspect disk before retrying"
+            )
         written_sha = hashlib.sha256(written).hexdigest()
         decoded = written.decode("utf-8-sig")
         return {
@@ -154,5 +195,7 @@ class ManuscriptWriter:
 def _validate_sha256(value: str) -> str:
     expected = value.strip()
     if len(expected) != 64 or any(ch not in "0123456789abcdef" for ch in expected):
-        raise ManuscriptWriteError("expected_sha256 must be 64 lowercase hexadecimal characters")
+        raise ManuscriptWriteError(
+            "expected_sha256 must be 64 lowercase hexadecimal characters"
+        )
     return expected
