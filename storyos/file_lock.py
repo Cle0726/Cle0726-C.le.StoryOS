@@ -64,18 +64,30 @@ def project_file_lock(
     """Serialize StoryOS mutations across processes using an OS-managed file lock.
 
     The lock file is intentionally persistent; ownership is held by the operating system,
-    so a crashed process cannot leave a permanently-owned stale lock behind.
+    so a crashed process cannot leave a permanently-owned stale lock behind. Only failures
+    caused by the lock primitive itself are translated to ``ProjectFileLockError``;
+    exceptions raised by code inside the protected section are never rewritten.
     """
 
     path = _lock_path(project_root, namespace, resource)
     if path.exists() and path.is_symlink():
         raise ProjectFileLockError("lock file cannot be a symlink")
+
     try:
-        with path.open("a+b") as handle:
-            _acquire(handle)
-            try:
-                yield
-            finally:
-                _release(handle)
+        handle = path.open("a+b")
     except OSError as exc:
-        raise ProjectFileLockError(f"failed to use StoryOS project lock: {exc}") from exc
+        raise ProjectFileLockError(f"failed to open StoryOS project lock: {exc}") from exc
+
+    with handle:
+        try:
+            _acquire(handle)
+        except OSError as exc:
+            raise ProjectFileLockError(f"failed to acquire StoryOS project lock: {exc}") from exc
+
+        try:
+            yield
+        finally:
+            try:
+                _release(handle)
+            except OSError as exc:
+                raise ProjectFileLockError(f"failed to release StoryOS project lock: {exc}") from exc
