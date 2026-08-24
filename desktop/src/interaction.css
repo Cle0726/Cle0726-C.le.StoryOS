@@ -1,0 +1,513 @@
+/* StoryOS interaction / motion layer.
+   This file only changes presentation and view-state classes. It must not alter
+   manuscript, Recovery, Claim, Canon or Tauri mutation behavior. */
+
+:root {
+  --motion-fast: 150ms;
+  --motion-medium: 260ms;
+  --motion-slow: 420ms;
+  --motion-ease: cubic-bezier(.2, .72, .2, 1);
+}
+
+html,
+body,
+#root {
+  min-width: 760px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Floating view controls                                                      */
+/* -------------------------------------------------------------------------- */
+
+.interaction-dock {
+  position: fixed;
+  z-index: 38;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(164, 201, 230, 0.12);
+  border-radius: 14px;
+  background: rgba(6, 18, 28, 0.7);
+  box-shadow: 0 16px 42px rgba(0, 6, 12, 0.28), inset 0 1px rgba(255,255,255,.035);
+  backdrop-filter: blur(22px) saturate(125%);
+  opacity: .68;
+  transform: translateY(0);
+  transition:
+    opacity var(--motion-fast) ease,
+    transform var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    background var(--motion-fast) ease;
+}
+
+.interaction-dock:hover,
+.interaction-dock:focus-within {
+  opacity: 1;
+  transform: translateY(-1px);
+  border-color: rgba(164, 205, 237, 0.2);
+  background: rgba(8, 22, 34, 0.84);
+}
+
+.interaction-dock button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #8198ab;
+  background: transparent;
+  box-shadow: none;
+}
+
+.interaction-dock button:hover:not(:disabled) {
+  color: #d8e8f4;
+  border-color: rgba(151, 197, 232, 0.12);
+  background: rgba(58, 101, 133, 0.26);
+}
+
+.interaction-dock button.active {
+  color: #dff1ff;
+  border-color: rgba(145, 199, 240, 0.22);
+  background: linear-gradient(180deg, rgba(78, 131, 172, 0.34), rgba(47, 89, 120, 0.28));
+  box-shadow: inset 0 1px rgba(255,255,255,.045), 0 0 18px rgba(104, 166, 215, 0.07);
+}
+
+.interaction-dock button:disabled {
+  opacity: .28;
+  cursor: default;
+}
+
+.interaction-dock svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.interaction-toast {
+  position: fixed;
+  z-index: 39;
+  right: 18px;
+  bottom: 70px;
+  max-width: min(340px, calc(100vw - 36px));
+  padding: 9px 12px;
+  border: 1px solid rgba(160, 201, 234, 0.13);
+  border-radius: 11px;
+  color: #c9dae8;
+  background: rgba(7, 20, 31, 0.84);
+  box-shadow: 0 16px 42px rgba(0, 5, 11, 0.3), inset 0 1px rgba(255,255,255,.03);
+  backdrop-filter: blur(20px);
+  font-size: 11px;
+  animation: storyos-toast-in 220ms var(--motion-ease) both;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Workspace panel transitions                                                 */
+/* -------------------------------------------------------------------------- */
+
+.product-workspace-grid {
+  transition:
+    grid-template-columns var(--motion-medium) var(--motion-ease),
+    padding var(--motion-medium) var(--motion-ease),
+    gap var(--motion-medium) var(--motion-ease);
+}
+
+.product-navigator,
+.product-inspector,
+.product-canvas {
+  min-width: 0;
+  transition:
+    opacity var(--motion-medium) var(--motion-ease),
+    transform var(--motion-medium) var(--motion-ease),
+    border-color var(--motion-medium) var(--motion-ease),
+    box-shadow var(--motion-medium) var(--motion-ease),
+    background var(--motion-medium) var(--motion-ease);
+  will-change: opacity, transform;
+}
+
+html.storyos-nav-collapsed .product-workspace-grid {
+  grid-template-columns: 0 minmax(560px, 1fr) minmax(316px, 22vw);
+}
+
+html.storyos-nav-collapsed .product-navigator {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-24px) scale(.985);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+html.storyos-inspector-collapsed .product-workspace-grid {
+  grid-template-columns: minmax(244px, 17vw) minmax(560px, 1fr) 0;
+}
+
+html.storyos-inspector-collapsed .product-inspector {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(24px) scale(.985);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+html.storyos-nav-collapsed.storyos-inspector-collapsed .product-workspace-grid {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+
+/* Focus mode keeps both panels mounted so the transition has spatial continuity. */
+.focus-mode .product-workspace-grid,
+html.storyos-nav-collapsed .focus-mode .product-workspace-grid,
+html.storyos-inspector-collapsed .focus-mode .product-workspace-grid,
+html.storyos-nav-collapsed.storyos-inspector-collapsed .focus-mode .product-workspace-grid {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+
+.focus-mode .product-navigator {
+  display: flex !important;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-30px) scale(.98);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.focus-mode .product-inspector {
+  display: block !important;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(30px) scale(.98);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.focus-mode .product-canvas {
+  transform: translateZ(0) scale(1.002);
+}
+
+.focus-mode .product-topbar {
+  transition:
+    min-height var(--motion-medium) var(--motion-ease),
+    opacity var(--motion-medium) var(--motion-ease),
+    background var(--motion-medium) var(--motion-ease),
+    box-shadow var(--motion-medium) var(--motion-ease);
+}
+
+.focus-mode .focus-status {
+  animation: storyos-focus-status-in 280ms var(--motion-ease) both;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Page / list / card motion                                                   */
+/* -------------------------------------------------------------------------- */
+
+.launcher-hero,
+.launcher-create-card,
+.product-landing,
+.product-editor-document,
+.entity-detail,
+.governance-workbench,
+.inspector-placeholder {
+  animation: storyos-surface-in 320ms var(--motion-ease) both;
+}
+
+.recent-card,
+.entity-section,
+.governance-card,
+.scene-context-card,
+.scene-context-event,
+.scene-context-fact,
+.revision-preview {
+  transform-origin: 50% 20%;
+  animation: storyos-card-in 250ms var(--motion-ease) both;
+}
+
+.recent-card:nth-child(2),
+.entity-section:nth-child(2),
+.governance-card:nth-child(2) { animation-delay: 26ms; }
+.recent-card:nth-child(3),
+.entity-section:nth-child(3),
+.governance-card:nth-child(3) { animation-delay: 52ms; }
+.recent-card:nth-child(4),
+.entity-section:nth-child(4),
+.governance-card:nth-child(4) { animation-delay: 78ms; }
+
+.product-nav-list .nav-item {
+  position: relative;
+  overflow: hidden;
+}
+
+.product-nav-list .nav-item::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #a4d1f2, #5b92bb);
+  box-shadow: 0 0 14px rgba(113, 179, 229, 0.3);
+  opacity: 0;
+  transform: scaleY(.25);
+  transition: opacity var(--motion-fast) ease, transform var(--motion-medium) var(--motion-ease);
+}
+
+.product-nav-list .nav-item.selected::after {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.product-nav-list .nav-item.selected {
+  box-shadow: none;
+}
+
+.recent-card:hover,
+.entity-canon-card:hover,
+.entity-claim-card:hover,
+.governance-card:hover,
+.scene-context-card:hover {
+  box-shadow: 0 20px 52px rgba(0, 6, 12, 0.22), inset 0 1px rgba(255,255,255,.025);
+}
+
+.save-button:not(:disabled):active,
+.primary-action:not(:disabled):active {
+  transform: translateY(1px) scale(.985);
+}
+
+.draft-state.dirty {
+  animation: storyos-dirty-breathe 2.8s ease-in-out infinite;
+}
+
+/* Governance progression gets a restrained motion cue instead of a loud pulse. */
+.governance-pipeline i {
+  position: relative;
+  overflow: hidden;
+}
+
+.governance-pipeline i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(164, 210, 244, .35), transparent);
+  transform: translateX(-100%);
+  animation: storyos-pipeline-sweep 2.8s ease-in-out infinite;
+}
+
+.governance-pipeline span.active {
+  text-shadow: 0 0 16px rgba(135, 193, 237, 0.22);
+}
+
+.governance-pipeline span.done::before {
+  content: "✓ ";
+  color: #9fd0b1;
+}
+
+/* Existing inline status surfaces gain toast-like entrance without duplicating state. */
+.error-banner,
+.success-banner,
+.conflict-card,
+.recovery-card {
+  animation: storyos-banner-in 220ms var(--motion-ease) both;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Modal motion                                                                */
+/* -------------------------------------------------------------------------- */
+
+.modal-backdrop {
+  animation: storyos-backdrop-in 180ms ease-out both;
+}
+
+.story-modal,
+.canon-confirm {
+  transform-origin: 50% 18%;
+  animation: storyos-modal-in 260ms var(--motion-ease) both;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Loading / quiet feedback                                                    */
+/* -------------------------------------------------------------------------- */
+
+.empty-inline {
+  position: relative;
+  overflow: hidden;
+}
+
+.empty-inline::after {
+  content: "";
+  position: absolute;
+  left: -45%;
+  top: 0;
+  width: 34%;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(174, 214, 244, 0.07), transparent);
+  animation: storyos-inline-shimmer 2.2s ease-in-out infinite;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Keyframes                                                                   */
+/* -------------------------------------------------------------------------- */
+
+@keyframes storyos-surface-in {
+  from { opacity: 0; transform: translateY(8px) scale(.997); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes storyos-card-in {
+  from { opacity: 0; transform: translateY(6px) scale(.994); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes storyos-modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(.972); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes storyos-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes storyos-banner-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes storyos-toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes storyos-focus-status-in {
+  from { opacity: 0; transform: translate(-50%, 8px) scale(.98); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes storyos-dirty-breathe {
+  0%, 100% { box-shadow: 0 0 0 rgba(224, 185, 123, 0); }
+  50% { box-shadow: 0 0 20px rgba(224, 185, 123, 0.055); }
+}
+
+@keyframes storyos-pipeline-sweep {
+  0%, 18% { transform: translateX(-110%); opacity: 0; }
+  42% { opacity: .6; }
+  68%, 100% { transform: translateX(110%); opacity: 0; }
+}
+
+@keyframes storyos-inline-shimmer {
+  0%, 22% { transform: translateX(0); opacity: 0; }
+  48% { opacity: 1; }
+  78%, 100% { transform: translateX(430%); opacity: 0; }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Responsive interaction behavior                                             */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 1260px) {
+  html.storyos-nav-collapsed .product-workspace-grid {
+    grid-template-columns: 0 minmax(520px, 1fr) minmax(286px, 25vw);
+  }
+
+  html.storyos-inspector-collapsed .product-workspace-grid {
+    grid-template-columns: minmax(230px, 22vw) minmax(520px, 1fr) 0;
+  }
+}
+
+@media (max-width: 1120px) {
+  .interaction-dock .inspector-control {
+    display: none;
+  }
+
+  html.storyos-nav-collapsed .product-workspace-grid,
+  html.storyos-nav-collapsed.storyos-inspector-collapsed .product-workspace-grid {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  html.storyos-nav-collapsed .product-navigator {
+    padding-inline: 0;
+  }
+
+  .product-inspector,
+  html.storyos-inspector-collapsed .product-inspector {
+    display: none !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .interaction-dock {
+    right: 12px;
+    bottom: 12px;
+  }
+
+  .interaction-toast {
+    right: 12px;
+    bottom: 64px;
+  }
+
+  html.storyos-nav-collapsed .product-workspace-grid {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  html.storyos-nav-collapsed .product-editor-document {
+    max-width: 940px;
+    padding-inline: clamp(22px, 6vw, 48px);
+  }
+}
+
+@media (max-height: 650px) {
+  .interaction-dock {
+    bottom: 10px;
+  }
+
+  .interaction-toast {
+    bottom: 58px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .interaction-dock,
+  .interaction-toast,
+  .product-workspace-grid,
+  .product-navigator,
+  .product-inspector,
+  .product-canvas,
+  .launcher-hero,
+  .launcher-create-card,
+  .product-landing,
+  .product-editor-document,
+  .entity-detail,
+  .governance-workbench,
+  .inspector-placeholder,
+  .recent-card,
+  .entity-section,
+  .governance-card,
+  .scene-context-card,
+  .scene-context-event,
+  .scene-context-fact,
+  .revision-preview,
+  .modal-backdrop,
+  .story-modal,
+  .canon-confirm,
+  .error-banner,
+  .success-banner,
+  .conflict-card,
+  .recovery-card,
+  .draft-state.dirty,
+  .governance-pipeline i::after,
+  .empty-inline::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}
