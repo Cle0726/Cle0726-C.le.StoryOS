@@ -117,8 +117,6 @@ def create_project(
     except (AtomicWriteError, ProjectFileLockError) as exc:
         raise ProjectAuthoringError(str(exc)) from exc
 
-    # Re-open through the canonical reader so a project that cannot be consumed is never
-    # reported as successfully initialized.
     project = StoryProject.open(project_root)
     return {
         "schema": "story.project-create.v1",
@@ -145,7 +143,7 @@ def create_manuscript(
     season: int,
     episode: int,
 ) -> dict[str, Any]:
-    """Create one empty manuscript working copy without overwriting an existing file."""
+    """Create one empty manuscript working copy without overwriting an existing episode."""
 
     if isinstance(season, bool) or not isinstance(season, int) or season < 1 or season > 9999:
         raise ProjectAuthoringError("季号必须是 1 到 9999 的整数")
@@ -171,17 +169,18 @@ def create_manuscript(
             "manuscript-create",
             resource=f"S{season:04d}-EP{episode:04d}",
         ):
-            # Episode number is the logical identity in the desktop product. Refuse a
-            # second file with the same S/EP even when the title differs.
             season_dir = manuscript_root / f"S{season:02d}"
             if season_dir.exists():
                 if season_dir.is_symlink() or not season_dir.is_dir():
                     raise ProjectAuthoringError("季目录不是安全文件夹")
-                prefix = f"EP{episode:02d}"
+                episode_pattern = re.compile(
+                    rf"^EP{episode:02d}(?:[_\-\s]|$)",
+                    flags=re.IGNORECASE,
+                )
                 for current in season_dir.iterdir():
                     if current.is_symlink():
                         raise ProjectAuthoringError("正文目录不能包含符号链接")
-                    if current.is_file() and current.stem.upper().startswith(prefix.upper()):
+                    if current.is_file() and episode_pattern.match(current.stem):
                         raise ProjectAuthoringError(
                             f"S{season:02d} · EP{episode:02d} 已经存在；请打开现有章节"
                         )
