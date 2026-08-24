@@ -5,7 +5,8 @@ import json
 from dataclasses import asdict
 
 from storyos.authority import CanonResolver
-from storyos.canon_commit import CanonCommitError, CanonCommitWorkbench
+from storyos.canon_commit import CanonCommitError
+from storyos.canon_commit_service import CanonCommitWorkbench
 from storyos.claim_review import ClaimReviewError, ClaimReviewWorkbench, ReviewDecision
 from storyos.claims import ClaimStager
 from storyos.knowledge import KnowledgeTimeline
